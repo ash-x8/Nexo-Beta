@@ -38,7 +38,7 @@ npm run dev                  # http://localhost:3000
 ```
 
 ### 1. Gemini (or another provider)
-Create a key in Google AI Studio and set `GEMINI_API_KEY`. `GEMINI_MODEL` defaults to `gemini-2.5-flash`; model names
+Create a key in Google AI Studio and set `GEMINI_API_KEY`. `GEMINI_MODEL` defaults to `gemini-3.8-flash` (if your key can't use it, try `gemini-2.5-flash`); model names
 change over time, so check the current list. To use another provider set `AI_PROVIDER=openai-compatible` plus
 `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY`, `OPENAI_COMPAT_MODEL` (PDF analysis and server voice need Gemini).
 

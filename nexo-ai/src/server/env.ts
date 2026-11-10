@@ -6,8 +6,8 @@ function num(name: string, fallback: number): number {
 export const env = {
   provider: (process.env.AI_PROVIDER || "gemini").toLowerCase(),
   geminiKey: process.env.GEMINI_API_KEY || "",
-  geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-  geminiTtsModel: process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts",
+  geminiModel: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+  geminiTtsModel: process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-tts",
   geminiTtsVoice: process.env.GEMINI_TTS_VOICE || "Kore",
   compatBase: (process.env.OPENAI_COMPAT_BASE_URL || "").replace(/\/+$/, ""),
   compatKey: process.env.OPENAI_COMPAT_API_KEY || "",
