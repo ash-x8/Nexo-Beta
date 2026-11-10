@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/conversations/{cid} {
+      allow read, write: if isOwner(uid);
+      match /messages/{mid} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+    match /users/{uid}/memory/{mid} {
+      allow read, write: if isOwner(uid);
+    }
+    match /users/{uid}/settings/{doc} {
+      allow read, write: if isOwner(uid);
+    }
+    // Usage counters are written only by the server (Admin SDK bypasses rules).
+    match /users/{uid}/usage/{day} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+  }
+}
