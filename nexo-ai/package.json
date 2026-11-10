@@ -1,0 +1,38 @@
+{
+  "name": "nexo-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEXO AI - Your Intelligent Digital Companion",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.114.0",
+    "@react-three/fiber": "^8.17.10",
+    "firebase": "^10.14.1",
+    "firebase-admin": "^12.7.0",
+    "highlight.js": "^11.10.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "rehype-highlight": "^7.0.0",
+    "remark-gfm": "^4.0.0",
+    "three": "^0.169.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.169.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.15",
+    "typescript": "^5.6.3"
+  },
+  "engines": { "node": ">=18.18" }
+}
