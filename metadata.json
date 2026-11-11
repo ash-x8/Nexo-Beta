@@ -1,0 +1,8 @@
+{
+  "name": "NEXO AI",
+  "description": "Your Intelligent Digital Companion - Advanced Personal AI Assistant Platform with voice, vision, memory, and web search",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "permissions": []
+}

@@ -13,10 +13,15 @@ const THEME_BOOT = `try{var p=JSON.parse(localStorage.getItem("nexo.prefs")||"{}
 
 export const metadata: Metadata = {
   title: "NEXO AI",
-  description: "Your Intelligent Digital Companion",
+  description: "Your Intelligent Digital Companion - Advanced Personal AI Assistant Platform with voice, vision, memory, and web search",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
-  appleWebApp: { capable: true, title: "NEXO AI", statusBarStyle: "black-translucent" }
+  appleWebApp: { capable: true, title: "NEXO AI", statusBarStyle: "black-translucent" },
+  openGraph: {
+    title: "NEXO AI",
+    description: "Your Intelligent Digital Companion - Advanced Personal AI Assistant Platform with voice, vision, memory, and web search",
+    type: "website"
+  }
 };
 
 export const viewport: Viewport = {

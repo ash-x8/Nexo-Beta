@@ -101,9 +101,13 @@ export default function Composer(p: Props) {
         <input ref={fileRef} type="file" hidden multiple accept={docAccept} onChange={(e) => onFiles(e.target.files, fileRef.current)} />
         <input ref={imgRef} type="file" hidden multiple accept={imgAccept} onChange={(e) => onFiles(e.target.files, imgRef.current)} />
         <button className="icon" title={t.attach} aria-label={t.attach} disabled={p.listening}
-          onClick={() => (p.mobile ? setSheet(true) : fileRef.current?.click())}>＋</button>
+          onClick={() => (p.mobile ? setSheet(true) : fileRef.current?.click())}>
+          <Icon name="plus" size={18} />
+        </button>
         {p.searchAvailable && (
-          <button className={`icon ${p.useSearch ? "on" : ""}`} title={t.webSearch} aria-label={t.webSearch} aria-pressed={p.useSearch} onClick={p.onToggleSearch}>⌕</button>
+          <button className={`icon ${p.useSearch ? "on" : ""}`} title={t.webSearch} aria-label={t.webSearch} aria-pressed={p.useSearch} onClick={p.onToggleSearch}>
+            <Icon name="globe" size={18} />
+          </button>
         )}
         <textarea
           value={text}
@@ -115,18 +119,34 @@ export default function Composer(p: Props) {
           disabled={p.listening}
         />
         {p.micSupported && !p.listening && (
-          <button className="icon" title={t.mic} aria-label={t.mic} onClick={p.onMicStart} disabled={p.streaming}>🎙</button>
+          <button className="icon" title={t.mic} aria-label={t.mic} onClick={p.onMicStart} disabled={p.streaming}>
+            <Icon name="mic" size={18} />
+          </button>
         )}
         {p.listening && (
           <>
-            <button className="icon" title={t.micCancel} aria-label={t.micCancel} onClick={p.onMicCancel}>✕</button>
-            <button className="icon rec" title={t.micStop} aria-label={t.micStop} onClick={p.onMicStop}>■</button>
+            <button className="icon" title={t.micCancel} aria-label={t.micCancel} onClick={p.onMicCancel}>
+              <Icon name="close" size={18} />
+            </button>
+            <button className="icon rec" title={t.micStop} aria-label={t.micStop} onClick={p.onMicStop}>
+              <Icon name="stop" size={18} />
+            </button>
           </>
         )}
         {p.streaming ? (
-          <button className="send stop" onClick={p.onStop}>{t.stop}</button>
+          <button className="send stop" onClick={p.onStop}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <Icon name="stop" size={16} />
+              <span>{t.stop}</span>
+            </span>
+          </button>
         ) : (
-          <button className="send" onClick={submit} disabled={p.listening || reading || (!text.trim() && !files.length)}>{t.send}</button>
+          <button className="send" onClick={submit} disabled={p.listening || reading || (!text.trim() && !files.length)}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <Icon name="send" size={16} />
+              <span>{t.send}</span>
+            </span>
+          </button>
         )}
       </div>
 

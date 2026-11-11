@@ -7,6 +7,8 @@ import { acceptAttr } from "@/lib/files";
 import { promptsFor } from "@/lib/prompts";
 import { Icon } from "./icons";
 
+import { isWebGLAvailable } from "@/lib/webgl";
+
 const JarvisCore = dynamic(() => import("../JarvisCore"), { ssr: false });
 
 interface Props {
@@ -30,7 +32,7 @@ export default function HomeScreen(p: Props) {
   const { t } = p;
   const imgRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
-  const [webgl, setWebgl] = useState(true);
+  const [webgl, setWebgl] = useState(() => isWebGLAvailable());
   const onFail = useCallback(() => setWebgl(false), []);
 
   const now = new Date();

@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { ChatMessage } from "@/lib/types";
 import type { Dict } from "@/lib/i18n";
+import { Icon } from "./mobile/icons";
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const ref = useRef<HTMLPreElement>(null);
@@ -18,8 +19,12 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           setDone(true);
           setTimeout(() => setDone(false), 1500);
         }}
+        aria-label="Copy code block"
       >
-        {done ? "✓" : "Copy"}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+          <Icon name={done ? "check" : "copy"} size={13} />
+          <span>{done ? "Copied" : "Copy"}</span>
+        </span>
       </button>
       <pre ref={ref}>{children}</pre>
     </div>
@@ -45,12 +50,31 @@ export default function MessageView({ msg, streaming, canRegenerate, speakingThi
   return (
     <article className={`msg ${isUser ? "msg-user" : "msg-ai"}`}>
       <header>
-        <span className="who">{isUser ? t.you : t.assistantName}</span>
+        <span className="who">
+          {isUser ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <Icon name="user" size={13} />
+              <span>{t.you}</span>
+            </span>
+          ) : (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <Icon name="nexo" size={13} />
+              <span>{t.assistantName}</span>
+            </span>
+          )}
+        </span>
         <time dateTime={new Date(msg.createdAt).toISOString()}>{time}</time>
       </header>
 
       {msg.attachments?.length ? (
-        <ul className="attached">{msg.attachments.map((a, i) => <li key={i}>{a.name}</li>)}</ul>
+        <ul className="attached">
+          {msg.attachments.map((a, i) => (
+            <li key={i} style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <Icon name="paperclip" size={12} />
+              <span>{a.name}</span>
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {isUser ? (
@@ -62,32 +86,77 @@ export default function MessageView({ msg, streaming, canRegenerate, speakingThi
             rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
             components={{
               pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {children}
+                </a>
+              )
             }}
           >
             {msg.content}
           </ReactMarkdown>
         </div>
       ) : streaming ? (
-        <div className="thinking" role="status" aria-label={t.thinking}><i /><i /><i /><span>{t.thinking}</span></div>
+        <div className="thinking" role="status" aria-label={t.thinking}>
+          <i />
+          <i />
+          <i />
+          <span>{t.thinking}</span>
+        </div>
       ) : null}
 
       {msg.sources?.length ? (
         <div className="sources">
-          <span>{t.sources}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--cyan)" }}>
+            <Icon name="globe" size={12} />
+            <span>{t.sources}:</span>
+          </span>
           {msg.sources.map((s, i) => (
-            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" title={s.url}>[{i + 1}] {s.title}</a>
+            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" title={s.url}>
+              [{i + 1}] {s.title}
+            </a>
           ))}
         </div>
       ) : null}
 
       {!isUser && msg.content && !streaming && (
         <footer>
-          <button onClick={async () => { await navigator.clipboard.writeText(msg.content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-            {copied ? t.copied : t.copy}
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(msg.content);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            title={copied ? t.copied : t.copy}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <Icon name={copied ? "check" : "copy"} size={13} />
+              <span>{copied ? t.copied : t.copy}</span>
+            </span>
           </button>
-          {canRegenerate && <button onClick={onRegenerate}>{t.regenerate}</button>}
-          {speakingThis ? <button onClick={onStopSpeak}>{t.stopSpeaking}</button> : <button onClick={() => onSpeak(msg.content)}>{t.readAloud}</button>}
+          {canRegenerate && (
+            <button onClick={onRegenerate} title={t.regenerate}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <Icon name="rotate" size={13} />
+                <span>{t.regenerate}</span>
+              </span>
+            </button>
+          )}
+          {speakingThis ? (
+            <button onClick={onStopSpeak} title={t.stopSpeaking}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <Icon name="stopSpeak" size={13} />
+                <span>{t.stopSpeaking}</span>
+              </span>
+            </button>
+          ) : (
+            <button onClick={() => onSpeak(msg.content)} title={t.readAloud}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <Icon name="speak" size={13} />
+                <span>{t.readAloud}</span>
+              </span>
+            </button>
+          )}
         </footer>
       )}
     </article>

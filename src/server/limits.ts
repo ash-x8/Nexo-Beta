@@ -1,11 +1,12 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { adminDb, ApiError } from "./firebaseAdmin";
+import { adminDb, ApiError, hasAdminCredentials } from "./firebaseAdmin";
 import { env } from "./env";
 
 // Per-instance sliding window. On serverless this is best-effort per warm instance;
 // the Firestore daily counter below is the authoritative limit.
 const windows = new Map<string, number[]>();
 const inflight = new Set<string>();
+const localDailyUsage = new Map<string, { requests: number; tts: number; day: string }>();
 
 export function checkRate(uid: string, bucket: string) {
   const key = `${bucket}:${uid}`;
@@ -32,6 +33,21 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export async function consumeDaily(uid: string, field: "requests" | "tts"): Promise<void> {
   const limit = field === "requests" ? env.dailyLimit : env.dailyTtsLimit;
+  if (!hasAdminCredentials()) {
+    const tDay = today();
+    const cur = localDailyUsage.get(uid);
+    const usage = cur && cur.day === tDay ? cur : { requests: 0, tts: 0, day: tDay };
+    if (usage[field] >= limit) {
+      throw new ApiError(
+        429,
+        "quota_exceeded",
+        `Daily ${field === "requests" ? "message" : "voice"} limit reached (${limit}). It resets at 00:00 UTC.`
+      );
+    }
+    usage[field] += 1;
+    localDailyUsage.set(uid, usage);
+    return;
+  }
   const ref = adminDb().doc(`users/${uid}/usage/${today()}`);
   await adminDb().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -48,6 +64,11 @@ export async function consumeDaily(uid: string, field: "requests" | "tts"): Prom
 }
 
 export async function readUsage(uid: string) {
+  if (!hasAdminCredentials()) {
+    const cur = localDailyUsage.get(uid);
+    const tDay = today();
+    return cur && cur.day === tDay ? cur : { requests: 0, tts: 0, day: tDay };
+  }
   const snap = await adminDb().doc(`users/${uid}/usage/${today()}`).get();
   const d = snap.data() || {};
   return { requests: d.requests ?? 0, tts: d.tts ?? 0, day: today() };

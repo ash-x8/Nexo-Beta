@@ -1,15 +1,14 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { avatarBus, type AvatarState } from "@/lib/avatarBus";
+import { isWebGLAvailable, markWebGLFailed } from "@/lib/webgl";
 
 /**
- * Procedural holographic AI core (no model file needed).
- * Reads avatarBus.state / avatarBus.level every frame, so React never re-renders at 60fps.
- *  idle      slow, calm blue
- *  listening violet, rings tighten, core breathes
- *  thinking  fast counter-rotation, particles swirl
- *  speaking  teal, core + rings pulse with the real audio level
+ * Procedural holographic AI core.
+ * Uses Three.js when WebGL is available.
+ * Gracefully falls back to high-fidelity CSS holographic rings if WebGL is unsupported or blocked.
+ * Reads avatarBus.state / avatarBus.level every frame without React re-renders.
  */
 const PALETTE: Record<AvatarState, number> = {
   idle: 0x4aa8ff,
@@ -18,26 +17,58 @@ const PALETTE: Record<AvatarState, number> = {
   speaking: 0x3df0d0
 };
 
-interface Props { onFail?: () => void }
+interface Props {
+  onFail?: () => void;
+}
 
 export default function JarvisCore({ onFail }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const [useFallback, setUseFallback] = useState(() => !isWebGLAvailable());
 
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-
-    let renderer: THREE.WebGLRenderer;
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
-    } catch {
+    if (!isWebGLAvailable()) {
+      setUseFallback(true);
       onFail?.();
       return;
     }
+
+    const host = hostRef.current;
+    if (!host) return;
+
+    let renderer: THREE.WebGLRenderer | null = null;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: "low-power"
+      });
+    } catch {
+      markWebGLFailed();
+      setUseFallback(true);
+      onFail?.();
+      return;
+    }
+
+    if (!renderer || !renderer.domElement) {
+      markWebGLFailed();
+      setUseFallback(true);
+      onFail?.();
+      return;
+    }
+
+    const domElement = renderer.domElement;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setClearColor(0x000000, 0);
-    host.appendChild(renderer.domElement);
-    renderer.domElement.style.cssText = "width:100%;height:100%;display:block";
+    host.appendChild(domElement);
+    domElement.style.cssText = "width:100%;height:100%;display:block";
+
+    const onContextLost = (event: Event) => {
+      event.preventDefault();
+      markWebGLFailed();
+      setUseFallback(true);
+      onFail?.();
+    };
+    domElement.addEventListener("webglcontextlost", onContextLost, false);
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 50);
@@ -62,6 +93,7 @@ export default function JarvisCore({ onFail }: Props) {
       new THREE.MeshBasicMaterial({ color, opacity: 0.85, ...additive })
     );
     group.add(core);
+
     const halo = new THREE.Mesh(
       new THREE.SphereGeometry(0.95, 32, 32),
       new THREE.MeshBasicMaterial({ color, opacity: 0.12, ...additive })
@@ -97,12 +129,17 @@ export default function JarvisCore({ onFail }: Props) {
     group.add(points);
 
     const materials: THREE.Material[] = [
-      lattice.material as THREE.Material, core.material as THREE.Material, halo.material as THREE.Material,
-      pm, ...rings.map((r) => r.material as THREE.Material)
+      lattice.material as THREE.Material,
+      core.material as THREE.Material,
+      halo.material as THREE.Material,
+      pm,
+      ...rings.map((r) => r.material as THREE.Material)
     ];
 
     const resize = () => {
-      const w = host.clientWidth || 1, h = host.clientHeight || 1;
+      if (!host || !renderer) return;
+      const w = host.clientWidth || 1;
+      const h = host.clientHeight || 1;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -111,9 +148,13 @@ export default function JarvisCore({ onFail }: Props) {
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const target = new THREE.Color();
-    let speed = 1, pulse = 0, raf = 0, last = performance.now(), t = 0;
+    let speed = 1,
+      pulse = 0,
+      raf = 0,
+      last = performance.now(),
+      t = 0;
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -147,30 +188,59 @@ export default function JarvisCore({ onFail }: Props) {
       (core.material as THREE.MeshBasicMaterial).opacity = 0.7 + Math.min(0.3, pulse * 0.5);
       group.rotation.x = 0.25;
 
-      renderer.render(scene, camera);
+      try {
+        renderer?.render(scene, camera);
+      } catch {
+        cancelAnimationFrame(raf);
+        markWebGLFailed();
+        setUseFallback(true);
+        onFail?.();
+      }
     };
     raf = requestAnimationFrame(frame);
 
-    // Stop drawing while the tab is hidden to save battery.
     const vis = () => {
       cancelAnimationFrame(raf);
-      if (!document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+      if (!document.hidden) {
+        last = performance.now();
+        raf = requestAnimationFrame(frame);
+      }
     };
     document.addEventListener("visibilitychange", vis);
 
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", vis);
+      domElement.removeEventListener("webglcontextlost", onContextLost);
       ro.disconnect();
       scene.traverse((o) => {
         const m = o as THREE.Mesh;
         m.geometry?.dispose?.();
       });
       materials.forEach((m) => m.dispose());
-      renderer.dispose();
-      renderer.domElement.remove();
+      try {
+        renderer?.forceContextLoss();
+        renderer?.dispose();
+      } catch {
+        /* ignore */
+      }
+      try {
+        domElement.remove();
+      } catch {
+        /* ignore */
+      }
     };
   }, [onFail]);
+
+  if (useFallback) {
+    return (
+      <div className="core-fallback" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    );
+  }
 
   return <div ref={hostRef} className="jarvis-core" aria-hidden="true" />;
 }

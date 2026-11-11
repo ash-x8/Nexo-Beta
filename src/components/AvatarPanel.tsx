@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 
+import { isWebGLAvailable } from "@/lib/webgl";
+
 const JarvisCore = dynamic(() => import("./JarvisCore"), { ssr: false });
 
 interface Props {
@@ -16,7 +18,7 @@ interface Props {
 }
 
 export default function AvatarPanel({ state, speaking, source, onStopSpeaking, info, t }: Props) {
-  const [webgl, setWebgl] = useState(true);
+  const [webgl, setWebgl] = useState(() => isWebGLAvailable());
   const onFail = useCallback(() => setWebgl(false), []);
 
   return (

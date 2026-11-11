@@ -386,10 +386,14 @@ export default function Shell() {
       />
       <main className="main">
         <header className="topbar">
-          <button className="mini menu-btn" onClick={toggleSidebar} aria-label="Menu" title="Ctrl+/">☰</button>
+          <button className="mini menu-btn" onClick={toggleSidebar} aria-label="Menu" title="Ctrl+/">
+            <Icon name="menu" size={18} />
+          </button>
           <h1 title={title}>{title}</h1>
           <InstallButton label={t.install} />
-          <button className="mini" onClick={() => setSettings(true)} aria-label={t.settings} title={t.settings}>⚙</button>
+          <button className="mini" onClick={() => setSettings(true)} aria-label={t.settings} title={t.settings}>
+            <Icon name="settings" size={18} />
+          </button>
         </header>
 
         <div className="workspace">
