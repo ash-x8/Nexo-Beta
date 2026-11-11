@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ApiError, requireUser } from "@/server/firebaseAdmin";
 import { acquireInflight, checkRate, consumeDaily } from "@/server/limits";
 import { env, providerConfigured } from "@/server/env";
-import { ProviderError, streamChat, type ProviderMessage } from "@/server/providers";
+import { activeProvider, availableModels, ProviderError, streamChat, type ProviderMessage } from "@/server/providers";
 import { webSearch } from "@/server/search";
 import { systemPrompt } from "@/server/prompt";
 
@@ -28,7 +28,8 @@ const Body = z.object({
     .max(200),
   language: z.enum(["en", "si", "auto"]).default("auto"),
   memory: z.array(z.string().max(300)).max(20).default([]),
-  useSearch: z.boolean().default(false)
+  useSearch: z.boolean().default(false),
+  model: z.string().max(100).regex(/^[\w.\-:\/]+$/).optional()
 });
 
 function jsonError(e: unknown) {
@@ -42,6 +43,10 @@ export async function POST(req: Request) {
   try {
     if (!providerConfigured()) throw new ApiError(503, "server_config", "The AI provider is not configured on the server yet.");
     const uid = await requireUser(req);
+
+    // Reject oversized bodies before parsing them (base64 inflates attachments by ~4/3).
+    const declared = Number(req.headers.get("content-length") || 0);
+    if (declared > (env.maxAttachmentMb * 1.4 + 1) * 1024 * 1024) throw new ApiError(413, "too_large", "The request is too large.");
 
     const parsed = Body.safeParse(await req.json().catch(() => null));
     if (!parsed.success) throw new ApiError(400, "bad_request", "Invalid request.");
@@ -61,6 +66,20 @@ export async function POST(req: Request) {
     if (bytes > env.maxAttachmentMb * 1024 * 1024) throw new ApiError(413, "too_large", `Attachments exceed ${env.maxAttachmentMb} MB.`);
 
     checkRate(uid, "chat");
+
+    // A user-chosen model must be one the provider actually reports as available.
+    let model: string | undefined;
+    if (body.model && body.model !== activeProvider().defaultModel()) {
+      const vc = new AbortController();
+      const vt = setTimeout(() => vc.abort(), 8000);
+      try {
+        if (!(await availableModels(vc.signal)).includes(body.model)) throw new ApiError(400, "bad_model", "That model is not available. Choose another in Settings.");
+        model = body.model;
+      } catch (e) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError(503, "model_check", "Could not verify the selected model right now. Use the default model or try again.");
+      } finally { clearTimeout(vt); }
+    }
     release = acquireInflight(uid);
     await consumeDaily(uid, "requests");
 
@@ -87,7 +106,7 @@ export async function POST(req: Request) {
           const system = systemPrompt({ language: body.language, memory: body.memory, searchContext });
           const msgs: ProviderMessage[] = history.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments }));
           let produced = false;
-          for await (const t of streamChat(system, msgs, ac.signal)) {
+          for await (const t of streamChat(system, msgs, ac.signal, model)) {
             produced = true;
             controller.enqueue(line({ t }));
           }

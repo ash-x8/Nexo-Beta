@@ -13,6 +13,7 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
   const recRef = useRef<any>(null);
   const cancelledRef = useRef(false);
   const finalRef = useRef("");
+  const interimRef = useRef("");
   const onFinalRef = useRef(onFinal);
   onFinalRef.current = onFinal;
 
@@ -29,6 +30,7 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
     setError(null);
     setInterim("");
     finalRef.current = "";
+    interimRef.current = "";
     cancelledRef.current = false;
     const rec = new Ctor();
     rec.lang = lang;
@@ -42,7 +44,8 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
         if (r.isFinal) fin += r[0].transcript; else tmp += r[0].transcript;
       }
       finalRef.current = fin;
-      setInterim((fin + " " + tmp).trim());
+      interimRef.current = (fin + " " + tmp).trim();
+      setInterim(interimRef.current);
     };
     rec.onerror = (e: any) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") setError("Microphone permission was denied. Allow it in your browser's site settings.");
@@ -55,7 +58,7 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
     rec.onend = () => {
       recRef.current = null;
       setListening(false);
-      const text = (finalRef.current || "").trim();
+      const text = (finalRef.current || interimRef.current || "").trim();
       setInterim("");
       if (!cancelledRef.current && text) onFinalRef.current(text);
     };

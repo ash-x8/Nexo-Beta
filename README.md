@@ -1,116 +1,91 @@
-# NEXO AI — Your Intelligent Digital Companion
+# NEXO AI 2.0: mobile-first personal AI assistant
 
-A multilingual (Sinhala · English · Singlish) personal AI assistant: Next.js 14 + TypeScript, a secure server-side AI gateway
-(Gemini by default, any OpenAI-compatible provider via config), Firebase Auth + Firestore, streaming chat, a 3D human assistant
-slot with audio-driven lip-sync, manual-only voice input, and an installable PWA.
+Next.js 14 + TypeScript. Server-side AI gateway (Gemini or any OpenAI-compatible provider), Firebase Auth + Firestore,
+streaming chat, a procedural 3D JARVIS-style holographic core, manual-only voice, web search (Tavily), memory, themes,
+and an installable **PWA**. A PWA is *not* a native APK; it installs from the browser and opens full screen.
 
-> **Status you should know up front.** The code was written from scratch in a sandbox with no internet access, so
-> `npm install`, `npm run build` and live calls to Gemini/Firebase were **not run there**. Only a TypeScript *syntax* pass was done.
-> Run the checklist in "Verify" below on your machine before deploying. The 3D model file is **not included** (see "3D assistant").
+> **Verification status, read first.** This rebuild was written in a sandbox with **no internet**, so `npm install`,
+> `npm run typecheck`, `npm run lint`, `npm run build` and live calls to Gemini / Firebase / Tavily were **not run**.
+> What *was* done: syntax/undefined-name checks over every file, a strict type-check + runtime tests of the pure-logic
+> modules (`prefs`, `memory`, `prompts`, `i18n` en/si key parity). Run the checklist under "Verify" before relying on it.
 
-## What is implemented
+## Environment variables (unchanged, no new ones)
+All names are identical to the previous version, so your existing Vercel configuration keeps working.
 
-| Area | Status |
+| Variable | Purpose |
 |---|---|
-| Streaming chat via `/api/chat` (NDJSON), stop, regenerate, copy, timestamps, Markdown, code highlighting + copy, auto-scroll | Implemented |
-| Conversations: create, rename, delete, search, persisted in Firestore per user | Implemented |
-| Context-aware follow-ups (last `MAX_HISTORY_MESSAGES` messages sent every turn) | Implemented |
-| Providers: `gemini` or `openai-compatible` (Groq, OpenRouter, OpenAI, …) | Implemented |
-| Auth: Firebase Google sign-in; server verifies ID tokens with Admin SDK; Firestore rules isolate each user | Implemented |
-| Limits: per-minute throttle, daily request/voice quotas in Firestore, one generation at a time per user, input/attachment size caps | Implemented |
-| Error handling: timeout, provider rate-limit, quota, bad key, missing model, safety block, offline | Implemented |
-| Image understanding + file analysis (images, text/code files; PDFs on Gemini) | Implemented |
-| Web search (Tavily) with cited sources — toggle shown only when `TAVILY_API_KEY` is set | Implemented |
-| Memory: facts the user adds manually, on/off switch, delete (nothing is added automatically) | Implemented |
-| Voice input: manual mic button only; no wake word, no auto-start, no background recording | Implemented |
-| Voice output: Gemini TTS → real audio → AnalyserNode drives mouth morphs; falls back to browser voice (approximate lip-sync) | Implemented |
-| PWA: manifest, icons, service worker, offline page, install button | Implemented |
-| 3D human assistant: rig/animation/lip-sync system | Implemented — **needs your GLB asset** |
+| `AI_PROVIDER` (`gemini` \| `openai-compatible`), `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE` | Gemini chat + server voice |
+| `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY`, `OPENAI_COMPAT_MODEL` | any `/chat/completions` provider |
+| `TAVILY_API_KEY` | web search (toggle appears only when set) |
+| `RATE_LIMIT_PER_MINUTE`, `DAILY_REQUEST_LIMIT`, `DAILY_TTS_LIMIT`, `MAX_INPUT_CHARS`, `MAX_HISTORY_MESSAGES`, `MAX_ATTACHMENT_MB`, `REQUEST_TIMEOUT_MS` | limits |
+| `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Admin SDK (server only) |
+| `NEXT_PUBLIC_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID/APP_ID` | Firebase web config (public by design) |
 
-Not included: code execution sandbox, long-term automatic memory, native APK (a PWA is not an APK).
+Only the four Firebase web values are `NEXT_PUBLIC_`. No secret is exposed to the browser.
+Model defaults when `GEMINI_MODEL` / `GEMINI_TTS_MODEL` are unset: `gemini-2.5-flash` / `gemini-2.5-flash-preview-tts`.
+
+## What's in 2.0
+- **Mobile interface** (≤768px and installed touch PWAs): bottom navigation (Home · Chats · NEXO · Explore · Settings), Home
+  with the 3D core, full-screen chat, bottom sheets (chat actions, attach menu), safe-area + on-screen-keyboard handling.
+- **Desktop interface:** collapsible sidebar, centred conversation, AI info panel, shortcuts
+  (`Ctrl/⌘+Shift+O` new chat · `Ctrl/⌘+/` sidebar · `Ctrl/⌘+,` settings · `Esc` stop generating).
+- **3D JARVIS core** (`JarvisCore.tsx`, three.js, no model file): idle / listening / thinking / speaking states; while speaking
+  it pulses with the real audio level. Pauses when the tab is hidden, honours reduced-motion, falls back to CSS rings if WebGL is unavailable.
+- **Chat:** streaming (NDJSON), stop, regenerate, copy, timestamps, Markdown + highlighted code, retry, offline notice, conversation search / rename / delete.
+- **Providers:** `Provider` interface in `src/server/providers.ts` (Gemini, OpenAI-compatible). Users can pick a model in Settings;
+  `/api/models` lists what the provider reports and `/api/chat` rejects any model not on that list.
+- **Memory:** add / edit / enable-disable / delete (max 20), refuses text that looks like passwords, keys or card numbers; only the
+  8 most relevant enabled memories are sent per message. Nothing is saved automatically.
+- **Settings:** language, theme (dark / light / match device), assistant on/off, reply language, model, voice language, reading voice,
+  memory, usage, install, account, about. Synced to Firestore (`users/{uid}/settings/prefs`) except device-specific options.
+- **Voice:** manual mic only; cancel / stop-and-send; server TTS (Gemini) with browser-voice fallback; voice picker where the browser has voices.
+- **Attachments:** images, text/code files, PDF (Gemini only); preview thumbnail, name, size, reading indicator, validation, size cap.
+- **PWA:** versioned service worker (`nexo-v2`). HTML is never cached, hashed bundles are cache-first, `/api/*` and authenticated
+  requests are never touched. New versions wait for the user to tap **Update** (no surprise reloads). Offline page, install
+  button (Android/desktop), iOS "Add to Home Screen" instructions, standalone display.
+- **Security:** token-verified API routes, Zod validation, request-size guard, per-minute + daily limits, one generation at a time,
+  Firestore rules with ownership **and** field validation, security headers (HSTS, frame-deny, COOP allow-popups, minimal CSP directives).
+- **Sign-in:** Google popup with automatic redirect fallback (blocked popups / installed PWAs).
 
 ## Setup
-
 ```bash
 npm install
-cp .env.example .env.local   # fill in values; never commit .env.local
+cp .env.example .env.local   # fill in; never commit
 npm run dev                  # http://localhost:3000
 ```
+Firebase: enable **Authentication → Google**, add your domains under *Authorized domains*, create Firestore, then
+**publish the updated `firestore.rules`** (required: they now validate fields). `npx firebase-tools deploy --only firestore:rules`.
 
-### 1. Gemini (or another provider)
-Create a key in Google AI Studio and set `GEMINI_API_KEY`. `GEMINI_MODEL` defaults to `gemini-2.5-flash`; model names
-change over time, so check the current list. To use another provider set `AI_PROVIDER=openai-compatible` plus
-`OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY`, `OPENAI_COMPAT_MODEL` (PDF analysis and server voice need Gemini).
-
-### 2. Firebase
-1. Create a Firebase project; enable **Authentication → Google** and add your domains under *Authorized domains*.
-2. Create a **Cloud Firestore** database.
-3. Project settings → *Your apps* → Web app: copy the four `NEXT_PUBLIC_FIREBASE_*` values.
-4. Project settings → *Service accounts* → generate a private key; copy `project_id`, `client_email`, `private_key` into
-   `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (keep the quotes and `\n` escapes).
-5. Deploy rules: `npx firebase-tools deploy --only firestore:rules` (uses `firestore.rules`).
-
-### 3. Optional: web search
-Set `TAVILY_API_KEY`. Without it the search button is hidden.
-
-## Environment variables
-
-| Variable | Required | Purpose |
-|---|---|---|
-| `AI_PROVIDER` | no (`gemini`) | `gemini` or `openai-compatible` |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | for Gemini | chat model |
-| `GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE` | no | server voice (preview model names may change) |
-| `OPENAI_COMPAT_BASE_URL/API_KEY/MODEL` | for that provider | any `/chat/completions` API |
-| `TAVILY_API_KEY` | no | web search |
-| `RATE_LIMIT_PER_MINUTE` (10), `DAILY_REQUEST_LIMIT` (100), `DAILY_TTS_LIMIT` (40) | no | per-user limits |
-| `MAX_INPUT_CHARS`, `MAX_HISTORY_MESSAGES`, `MAX_ATTACHMENT_MB`, `REQUEST_TIMEOUT_MS` | no | size/time caps |
-| `FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY` | yes | server token verification + usage counters |
-| `NEXT_PUBLIC_FIREBASE_*` (4 values) | yes | browser Firebase SDK (public by design; protected by Auth + rules) |
-
-## Cost and free tiers
-Everything is configurable and nothing paid is activated by the app. Free-tier allowances for Gemini, Firebase and Tavily
-change and differ per model/region, so **check each provider's current pricing page** and set the limits above below them.
-- Firebase Auth + Firestore: use the Spark (free) plan; the app's reads/writes are small, but Spark has daily quotas.
-- Gemini chat/TTS and Tavily search consume provider quota per request; a quota error is shown as a clear message, never retried automatically.
-- Paid-only needs: higher Gemini limits or non-preview TTS, Firebase Blaze if you outgrow Spark, larger Tavily plans.
-- The in-memory per-minute throttle is per server instance (serverless caveat); the Firestore daily counter is authoritative.
-
-## 3D assistant
-The app looks for **`public/models/assistant.glb`**. Without it the panel says so plainly — no placeholder is shown as a human.
-Requirements for the animation system to work fully:
-- A rigged humanoid GLB with bones named like `Head`, `Neck`, `Spine1/Spine2`, `LeftEye`, `RightEye` (Ready Player Me / Mixamo naming works).
-- Face meshes with ARKit blend shapes: `eyeBlinkLeft/Right`, `jawOpen`, `mouthSmileLeft/Right`, `browInnerUp`, `mouthFunnel`,
-  and optionally Oculus visemes `viseme_aa/O/E/I`. Ready Player Me avatars can be exported with `?morphTargets=ARKit,Oculus Visemes`.
-- Keep it under ~5 MB for mobile (Draco/Meshopt-compress textures and geometry).
-- Check the licence of whichever model you use. If the model has no blend shapes the UI says lip-sync is unavailable.
-
-Lip-sync: server TTS audio is decoded with the Web Audio API; its live loudness drives jaw/viseme morphs every frame.
-Browser-voice fallback exposes no audio, so the mouth follows word boundaries (approximate, and labelled in the UI).
-
-## Voice notes
-The mic starts only when the user presses it and stops on silence, the stop button (sends) or cancel (discards). Chrome/Edge
-send speech audio to their own cloud recognizer; Sinhala (`si-LK`) support depends on the browser. Singlish is typed text, not speech.
-
-## Deploy (Vercel)
-1. Push the repo, import it in Vercel (framework: Next.js).
-2. Add every variable from `.env.example` (Production + Preview). Paste the private key with its `\n` escapes.
-3. Add the Vercel domain to Firebase *Authorized domains*, deploy Firestore rules.
-4. Open the site, sign in, send a message. Check `/api/config` shows `"configured": true`.
-Any Node 18+ host works (`npm run build && npm start`). `/api/chat` streams, so avoid hosts that buffer responses.
-
-## Verify (run locally before deploying)
+## Verify (run before deploying)
 ```bash
-npm install && npm run typecheck && npm run build
+npm install && npm run typecheck && npm run lint && npm run build
 ```
-Then: sign in → send a message (streams) → reload (history persists) → rename/delete → stop mid-answer → regenerate →
-attach an image → press the mic (permission prompt appears only then) → DevTools › Application: manifest, service worker,
-offline page (toggle Offline) → Lighthouse PWA check → resize to phone width.
+Then, on a real phone (installed PWA) and a desktop:
+1. Sign in → send a message (streams) → reload (history persists) → rename / delete → stop mid-answer → regenerate.
+2. Attach an image, a text file and (Gemini) a PDF. Try an oversize file and an unsupported type.
+3. Tap the mic (permission prompt only then) → speak → stop-and-send; cancel discards.
+4. Open the keyboard in chat: composer stays above it, no horizontal scroll. Check light and dark themes.
+5. Settings → change theme/language → reload on another device: they follow your account.
+6. Memory: add, edit, disable, delete; try "my password is…" (must be refused).
+7. DevTools › Application: manifest, service worker, toggle Offline → offline page. Deploy a change → "Update" toast appears.
+8. Model picker lists models; pick one and chat. Lighthouse PWA audit.
+
+## Known limits (honest list)
+- Not a native APK. iOS has no install prompt (manual Add to Home Screen); iOS splash screens use the manifest colour only.
+- Browser speech recognition is provider-dependent (Chrome/Edge use their cloud); Sinhala support varies. Singlish is typed text.
+- Rate limiting per minute is per warm serverless instance; the Firestore daily counter is authoritative.
+- Chat history is stored in Firestore and not encrypted client-side. The service worker never caches it.
+- Light theme covers the whole UI, but code blocks stay dark by design.
+- A strict Content-Security-Policy for scripts was deliberately **not** added: it could not be tested here and would likely break Firebase sign-in.
+- Everything marked "not run" above is unverified until you run the checklist.
 
 ## Structure
 ```
-src/app/api/{chat,tts,config,usage}   server routes (token-verified, rate-limited)
-src/server/                            env, firebase-admin, limits, providers, search, prompt
-src/lib/                               client: firebase, store (Firestore), api stream, speech hooks, i18n
-src/components/                        Shell, Sidebar, Composer, MessageView, Avatar3D, AvatarPanel, Settings
-public/                                manifest, sw.js, offline.html, icons, models/ (put assistant.glb here)
+src/app/                    layout, globals.css (desktop), mobile.css (design tokens + mobile), theme.css (light theme, toasts, gate)
+src/app/api/{chat,tts,config,usage,models}   server routes
+src/server/                 env, firebase-admin, limits, providers (abstraction), search, prompt
+src/lib/                    firebase, store (Firestore), api, prefs, memory, prompts, i18n (en/si), speech hooks, viewport/install hooks
+src/components/             Shell, Composer, MessageView, Settings, JarvisCore, AvatarPanel, Sidebar, App (sign-in gate)
+src/components/mobile/      BottomNav, BottomSheet, Home / Chats / Explore screens, icons
+public/                     manifest, sw.js (nexo-v2), offline.html, icons
 ```

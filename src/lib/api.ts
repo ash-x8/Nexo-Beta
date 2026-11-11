@@ -10,6 +10,7 @@ export interface ChatRequest {
   language: "en" | "si" | "auto";
   memory: string[];
   useSearch: boolean;
+  model?: string;
   signal: AbortSignal;
 }
 
@@ -19,7 +20,7 @@ export async function* streamChat(r: ChatRequest): AsyncGenerator<StreamEvent> {
     res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${r.token}` },
-      body: JSON.stringify({ messages: r.messages, language: r.language, memory: r.memory, useSearch: r.useSearch }),
+      body: JSON.stringify({ messages: r.messages, language: r.language, memory: r.memory, useSearch: r.useSearch, model: r.model }),
       signal: r.signal
     });
   } catch (e) {
@@ -58,4 +59,10 @@ export async function fetchTts(token: string, text: string, signal: AbortSignal)
     throw new ApiClientError(j?.error?.code || "tts", j?.error?.message || "Voice failed.");
   }
   return res.arrayBuffer();
+}
+
+export async function fetchModels(token: string): Promise<{ current: string; models: string[] }> {
+  const res = await fetch("/api/models", { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return { current: "", models: [] };
+  return res.json();
 }

@@ -2,6 +2,7 @@ import {
   addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { sanitizePrefs, SYNCED_KEYS, type Prefs } from "./prefs";
 import type { ChatMessage, Conversation, MemoryItem } from "./types";
 
 const convCol = (uid: string) => collection(db(), `users/${uid}/conversations`);
@@ -53,5 +54,20 @@ export function subscribeMemory(uid: string, cb: (m: MemoryItem[]) => void) {
   return onSnapshot(query(memCol(uid), orderBy("createdAt", "asc")),
     (s) => cb(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<MemoryItem, "id">) }))), () => cb([]));
 }
-export const addMemory = (uid: string, text: string) => addDoc(memCol(uid), { text, createdAt: Date.now() });
+export const addMemory = (uid: string, text: string) => addDoc(memCol(uid), { text, createdAt: Date.now(), enabled: true });
+export const updateMemory = (uid: string, id: string, patch: { text?: string; enabled?: boolean }) =>
+  updateDoc(doc(db(), `users/${uid}/memory/${id}`), patch);
+
+const prefsDoc = (uid: string) => doc(db(), `users/${uid}/settings/prefs`);
+
+/** Live preferences from Firestore (validated). `cb(null)` when none are saved yet. */
+export function subscribePrefs(uid: string, cb: (p: Partial<Prefs> | null) => void) {
+  return onSnapshot(prefsDoc(uid), (s) => cb(s.exists() ? sanitizePrefs(s.data()) : null), () => cb(null));
+}
+
+export function savePrefs(uid: string, p: Prefs) {
+  const data: Record<string, unknown> = {};
+  for (const k of SYNCED_KEYS) data[k] = p[k];
+  return setDoc(prefsDoc(uid), { ...data, updatedAt: Date.now() }, { merge: true });
+}
 export const deleteMemory = (uid: string, id: string) => deleteDoc(doc(db(), `users/${uid}/memory/${id}`));

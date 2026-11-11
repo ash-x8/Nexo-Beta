@@ -76,8 +76,8 @@ function geminiParts(m: ProviderMessage) {
   return parts;
 }
 
-async function* gemini(system: string, msgs: ProviderMessage[], signal: AbortSignal): AsyncGenerator<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.geminiModel)}:streamGenerateContent?alt=sse`;
+async function* gemini(system: string, msgs: ProviderMessage[], signal: AbortSignal, model: string): AsyncGenerator<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
   const res = await post(url, { "x-goog-api-key": env.geminiKey }, {
     systemInstruction: { parts: [{ text: system }] },
     contents: msgs.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: geminiParts(m) })),
@@ -95,7 +95,7 @@ async function* gemini(system: string, msgs: ProviderMessage[], signal: AbortSig
   if (blocked) throw new ProviderError("blocked", "The AI provider declined to answer this request.");
 }
 
-async function* compat(system: string, msgs: ProviderMessage[], signal: AbortSignal): AsyncGenerator<string> {
+async function* compat(system: string, msgs: ProviderMessage[], signal: AbortSignal, model: string): AsyncGenerator<string> {
   const messages: unknown[] = [{ role: "system", content: system }];
   for (const m of msgs) {
     const content: unknown[] = [];
@@ -107,7 +107,7 @@ async function* compat(system: string, msgs: ProviderMessage[], signal: AbortSig
     messages.push({ role: m.role, content: content.length === 1 ? m.content || " " : content });
   }
   const res = await post(`${env.compatBase}/chat/completions`, { Authorization: `Bearer ${env.compatKey}` },
-    { model: env.compatModel, messages, stream: true, temperature: 0.7 }, signal);
+    { model, messages, stream: true, temperature: 0.7 }, signal);
   for await (const data of sseLines(res)) {
     if (data === "[DONE]") return;
     try {
@@ -117,8 +117,68 @@ async function* compat(system: string, msgs: ProviderMessage[], signal: AbortSig
   }
 }
 
-export function streamChat(system: string, msgs: ProviderMessage[], signal: AbortSignal) {
-  return env.provider === "gemini" ? gemini(system, msgs, signal) : compat(system, msgs, signal);
+// ---------------------------------------------------------------------------
+// Provider abstraction: add a provider by implementing `Provider` and registering it below.
+// ---------------------------------------------------------------------------
+export interface Provider {
+  id: string;
+  defaultModel: () => string;
+  stream: (system: string, msgs: ProviderMessage[], signal: AbortSignal, model: string) => AsyncGenerator<string>;
+  listModels: (signal: AbortSignal) => Promise<string[]>;
+}
+
+async function getJson(url: string, headers: Record<string, string>, signal: AbortSignal): Promise<any> {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, signal });
+  } catch {
+    if (signal.aborted) throw new ProviderError("timeout", "The AI took too long to respond.");
+    throw new ProviderError("provider_unavailable", "Could not reach the AI provider.");
+  }
+  if (!res.ok) throw mapHttpError(res.status, await res.text().catch(() => ""));
+  return res.json();
+}
+
+const geminiProvider: Provider = {
+  id: "gemini",
+  defaultModel: () => env.geminiModel,
+  stream: gemini,
+  async listModels(signal) {
+    const j = await getJson("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { "x-goog-api-key": env.geminiKey }, signal);
+    const skip = /tts|embed|imagen|aqa|live|audio|image|veo|robotics/i;
+    return (j.models || [])
+      .filter((m: any) => (m.supportedGenerationMethods || []).includes("generateContent") && /^models\/gemini/.test(m.name) && !skip.test(m.name))
+      .map((m: any) => String(m.name).replace(/^models\//, ""))
+      .sort();
+  }
+};
+
+const compatProvider: Provider = {
+  id: "openai-compatible",
+  defaultModel: () => env.compatModel,
+  stream: compat,
+  async listModels(signal) {
+    const j = await getJson(`${env.compatBase}/models`, { Authorization: `Bearer ${env.compatKey}` }, signal);
+    return (j.data || []).map((m: any) => String(m.id)).sort();
+  }
+};
+
+const registry: Record<string, Provider> = { [geminiProvider.id]: geminiProvider, [compatProvider.id]: compatProvider };
+export const activeProvider = (): Provider => registry[env.provider] ?? compatProvider;
+
+export function streamChat(system: string, msgs: ProviderMessage[], signal: AbortSignal, model?: string) {
+  const p = activeProvider();
+  return p.stream(system, msgs, signal, model || p.defaultModel());
+}
+
+let modelCache: { at: number; list: string[] } | null = null;
+
+/** Models the configured provider reports as usable (cached 10 min). Throws ProviderError if the provider can't be asked. */
+export async function availableModels(signal: AbortSignal): Promise<string[]> {
+  if (modelCache && Date.now() - modelCache.at < 10 * 60_000) return modelCache.list;
+  const list = await activeProvider().listModels(signal);
+  modelCache = { at: Date.now(), list };
+  return list;
 }
 
 /** Text-to-speech via Gemini. Returns a WAV file (24 kHz, 16-bit mono PCM). */

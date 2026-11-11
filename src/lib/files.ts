@@ -9,15 +9,15 @@ export function acceptAttr(allowPdf: boolean) {
 export async function readAttachment(file: File, maxMb: number, allowPdf: boolean): Promise<Attachment> {
   if (file.size > maxMb * 1024 * 1024) throw new Error(`${file.name} is larger than ${maxMb} MB.`);
   if (file.type.startsWith("image/") && /^image\/(png|jpe?g|webp|gif)$/.test(file.type)) {
-    return { name: file.name, mime: file.type, data: await toBase64(file) };
+    return { name: file.name, mime: file.type, size: file.size, data: await toBase64(file) };
   }
   if (file.type === "application/pdf") {
     if (!allowPdf) throw new Error("PDF analysis needs the Gemini provider.");
-    return { name: file.name, mime: file.type, data: await toBase64(file) };
+    return { name: file.name, mime: file.type, size: file.size, data: await toBase64(file) };
   }
   if (file.type.startsWith("text/") || file.type === "application/json" || TEXT_EXT.test(file.name)) {
     const text = (await file.text()).slice(0, 120_000);
-    return { name: file.name, mime: "text/plain", text };
+    return { name: file.name, mime: "text/plain", size: file.size, text };
   }
   throw new Error(`${file.name}: unsupported file type.`);
 }

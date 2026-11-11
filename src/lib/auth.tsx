@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
+import { getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from "firebase/auth";
 import { auth, firebaseReady, googleProvider } from "./firebase";
 
 interface AuthCtx {
@@ -18,6 +18,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!firebaseReady) return;
+    getRedirectResult(auth()).catch((e) => console.warn("[auth] redirect result", e?.code));
     return onAuthStateChanged(auth(), (u) => { setUser(u); setLoading(false); });
   }, []);
 
@@ -27,8 +28,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async signIn() {
       try { await signInWithPopup(auth(), googleProvider()); return null; }
       catch (e: any) {
-        if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request") return null;
-        if (e?.code === "auth/unauthorized-domain") return "This domain is not authorized in Firebase Authentication settings.";
+        const code = e?.code as string | undefined;
+        if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return null;
+        if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
+          try { await signInWithRedirect(auth(), googleProvider()); return null; }
+          catch { return "Sign-in could not start. Allow pop-ups for this site and try again."; }
+        }
+        if (code === "auth/unauthorized-domain") return "This domain is not authorized in Firebase Authentication settings.";
+        if (code === "auth/network-request-failed") return "No connection. Check your internet and try again.";
         return "Sign-in failed. Check your connection and try again.";
       }
     },

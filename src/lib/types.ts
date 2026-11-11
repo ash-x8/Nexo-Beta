@@ -8,6 +8,8 @@ export interface Attachment {
   data?: string;
   /** plain text for text-like files */
   text?: string;
+  /** original file size in bytes, for display */
+  size?: number;
 }
 
 export interface Source { title: string; url: string }
@@ -29,7 +31,7 @@ export interface Conversation {
   updatedAt: number;
 }
 
-export interface MemoryItem { id: string; text: string; createdAt: number }
+export interface MemoryItem { id: string; text: string; createdAt: number; enabled?: boolean }
 
 export interface PublicConfig {
   provider: string;

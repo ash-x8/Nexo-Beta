@@ -18,7 +18,7 @@ export function plainForSpeech(md: string): string {
 
 type Source = "server" | "browser" | null;
 
-export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean) {
+export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, voiceName = "") {
   const [speaking, setSpeaking] = useState(false);
   const [source, setSource] = useState<Source>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -46,6 +46,8 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean) 
     if (!synth) { setSpeaking(false); return; }
     const u = new SpeechSynthesisUtterance(text);
     u.lang = /[\u0D80-\u0DFF]/.test(text) ? "si-LK" : "en-US";
+    const chosen = voiceName ? synth.getVoices().find((v) => v.voiceURI === voiceName) : undefined;
+    if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
     // Browser speech exposes no audio stream: drive the mouth from word boundaries (approximate).
     u.onboundary = () => { avatarBus.level = 0.8; };
     u.onend = u.onerror = () => { if (runRef.current === run) { cancelAnimationFrame(rafRef.current); avatarBus.level = 0; setSpeaking(false); setSource(null); } };
@@ -53,7 +55,7 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean) 
     const decay = () => { avatarBus.level *= 0.9; rafRef.current = requestAnimationFrame(decay); };
     decay();
     synth.speak(u);
-  }, []);
+  }, [voiceName]);
 
   const speak = useCallback(async (markdown: string) => {
     stop();
