@@ -1,19 +1,18 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { adminDb, ApiError, hasAdminCredentials } from "./firebaseAdmin";
-import { env } from "./env";
+import { adminDb, ApiError } from "./firebaseAdmin";
+import { readEnv } from "./env";
 
 // Per-instance sliding window. On serverless this is best-effort per warm instance;
 // the Firestore daily counter below is the authoritative limit.
 const windows = new Map<string, number[]>();
 const inflight = new Set<string>();
-const localDailyUsage = new Map<string, { requests: number; tts: number; day: string }>();
 
-export function checkRate(uid: string, bucket: string) {
+export function checkRate(uid: string, bucket: string, now = Date.now()): void {
+  const env = readEnv();
   const key = `${bucket}:${uid}`;
-  const now = Date.now();
   const recent = (windows.get(key) || []).filter((t) => now - t < 60_000);
   if (recent.length >= env.perMinute) {
-    const wait = Math.ceil((60_000 - (now - recent[0])) / 1000);
+    const wait = Math.max(1, Math.ceil((60_000 - (now - recent[0])) / 1000));
     throw new ApiError(429, "rate_limited", `Too many requests. Try again in ${wait}s.`);
   }
   recent.push(now);
@@ -26,29 +25,18 @@ export function acquireInflight(uid: string): () => void {
     throw new ApiError(409, "busy", "A response is already being generated. Stop it or wait for it to finish.");
   }
   inflight.add(uid);
-  return () => inflight.delete(uid);
+  return () => {
+    inflight.delete(uid);
+  };
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+export const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
 
 export async function consumeDaily(uid: string, field: "requests" | "tts"): Promise<void> {
+  const env = readEnv();
   const limit = field === "requests" ? env.dailyLimit : env.dailyTtsLimit;
-  if (!hasAdminCredentials()) {
-    const tDay = today();
-    const cur = localDailyUsage.get(uid);
-    const usage = cur && cur.day === tDay ? cur : { requests: 0, tts: 0, day: tDay };
-    if (usage[field] >= limit) {
-      throw new ApiError(
-        429,
-        "quota_exceeded",
-        `Daily ${field === "requests" ? "message" : "voice"} limit reached (${limit}). It resets at 00:00 UTC.`
-      );
-    }
-    usage[field] += 1;
-    localDailyUsage.set(uid, usage);
-    return;
-  }
-  const ref = adminDb().doc(`users/${uid}/usage/${today()}`);
+  const day = utcDay();
+  const ref = adminDb().doc(`users/${uid}/usage/${day}`);
   await adminDb().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const used = (snap.data()?.[field] as number | undefined) ?? 0;
@@ -64,12 +52,25 @@ export async function consumeDaily(uid: string, field: "requests" | "tts"): Prom
 }
 
 export async function readUsage(uid: string) {
-  if (!hasAdminCredentials()) {
-    const cur = localDailyUsage.get(uid);
-    const tDay = today();
-    return cur && cur.day === tDay ? cur : { requests: 0, tts: 0, day: tDay };
-  }
-  const snap = await adminDb().doc(`users/${uid}/usage/${today()}`).get();
+  const env = readEnv();
+  const day = utcDay();
+  const snap = await adminDb().doc(`users/${uid}/usage/${day}`).get();
   const d = snap.data() || {};
-  return { requests: d.requests ?? 0, tts: d.tts ?? 0, day: today() };
+  const requests = typeof d.requests === "number" ? d.requests : 0;
+  const tts = typeof d.tts === "number" ? d.tts : 0;
+  return {
+    requests,
+    tts,
+    day,
+    dailyLimit: env.dailyLimit,
+    dailyTtsLimit: env.dailyTtsLimit,
+    remainingRequests: Math.max(0, env.dailyLimit - requests),
+    remainingTts: Math.max(0, env.dailyTtsLimit - tts)
+  };
+}
+
+/** Test-only helper to clear in-memory rate limit and inflight state. */
+export function _resetLimitsForTest(): void {
+  windows.clear();
+  inflight.clear();
 }

@@ -1,161 +1,258 @@
 "use client";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { Attachment } from "@/lib/types";
-import type { Dict } from "@/lib/i18n";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { ArrowUp, Globe, Mic, MicOff, Paperclip, Square, X } from "lucide-react";
 import { acceptAttr, readAttachment } from "@/lib/files";
-import BottomSheet from "./mobile/BottomSheet";
-import { Icon } from "./mobile/icons";
+import type { Dict } from "@/lib/i18n";
+import type { Attachment } from "@/lib/types";
+import type { MicPermission } from "@/lib/useSpeechRecognition";
 
 interface Props {
   t: Dict;
-  mobile: boolean;
-  streaming: boolean;
-  maxChars: number;
-  maxMb: number;
-  allowPdf: boolean;
-  searchAvailable: boolean;
+  busy: boolean;
+  disabled?: boolean;
+  isMobile: boolean;
+  searchEnabled: boolean;
   useSearch: boolean;
   onToggleSearch: () => void;
+  maxAttachmentMb: number;
+  allowPdf: boolean;
+  maxInputChars: number;
   micSupported: boolean;
+  micPermission: MicPermission;
   listening: boolean;
   interim: string;
-  /** files chosen elsewhere (e.g. Home quick actions) to attach once */
-  seed: Attachment[];
-  onSeedUsed: () => void;
-  onMicStart: () => void;
-  onMicStop: () => void;
-  onMicCancel: () => void;
+  micError: string | null;
+  onStartMic: () => void;
+  onStopMic: () => void;
+  onCancelMic: () => void;
+  onClearMicError: () => void;
   onSend: (text: string, files: Attachment[]) => void;
   onStop: () => void;
-  onError: (msg: string) => void;
+  initialPrompt?: string;
 }
 
-function sizeLabel(a: Attachment): string {
-  const n = a.size ?? (a.text ? a.text.length : Math.round(((a.data?.length ?? 0) * 3) / 4));
-  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
-}
-
-export default function Composer(p: Props) {
+export default function Composer({
+  t,
+  busy,
+  disabled = false,
+  isMobile,
+  searchEnabled,
+  useSearch,
+  onToggleSearch,
+  maxAttachmentMb,
+  allowPdf,
+  maxInputChars,
+  micSupported,
+  micPermission,
+  listening,
+  interim,
+  micError,
+  onStartMic,
+  onStopMic,
+  onCancelMic,
+  onClearMicError,
+  onSend,
+  onStop,
+  initialPrompt
+}: Props) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [reading, setReading] = useState(false);
-  const [sheet, setSheet] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const imgRef = useRef<HTMLInputElement>(null);
-  const { t, seed, onSeedUsed } = p;
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [readingFiles, setReadingFiles] = useState(false);
+
+  const areaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (seed.length) { setFiles((x) => [...x, ...seed].slice(0, 4)); onSeedUsed(); }
-  }, [seed, onSeedUsed]);
+    if (initialPrompt) {
+      setText(initialPrompt);
+      requestAnimationFrame(() => areaRef.current?.focus());
+    }
+  }, [initialPrompt]);
+
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [text]);
+
+  const handleFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!picked.length) return;
+    setFileError(null);
+    setReadingFiles(true);
+    try {
+      const next: Attachment[] = [];
+      for (const f of picked.slice(0, 4 - files.length)) {
+        next.push(await readAttachment(f, maxAttachmentMb, allowPdf));
+      }
+      setFiles((prev) => [...prev, ...next].slice(0, 4));
+    } catch (err) {
+      setFileError((err as Error).message);
+    } finally {
+      setReadingFiles(false);
+    }
+  };
 
   const submit = () => {
-    const v = text.trim();
-    if ((!v && !files.length) || p.streaming || reading) return;
-    p.onSend(v, files);
+    if (busy || disabled || readingFiles) return;
+    const trimmed = text.trim();
+    if (!trimmed && files.length === 0) return;
+    if (trimmed.length > maxInputChars) {
+      setFileError(`Message is too long (max ${maxInputChars} characters).`);
+      return;
+    }
+    const outgoingFiles = files;
     setText("");
     setFiles([]);
+    setFileError(null);
+    onSend(trimmed, outgoingFiles);
   };
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter sends on desktop; on phones Enter inserts a new line and the Send button sends.
-    if (!p.mobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
-  };
-  const onFiles = async (list: FileList | null, input: HTMLInputElement | null) => {
-    if (!list) return;
-    const picked = Array.from(list);
-    if (input) input.value = "";
-    setReading(true);
-    for (const f of picked) {
-      try { const a = await readAttachment(f, p.maxMb, p.allowPdf); setFiles((x) => [...x, a].slice(0, 4)); }
-      catch (e) { p.onError((e as Error).message); }
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
+      e.preventDefault();
+      submit();
     }
-    setReading(false);
   };
-  const docAccept = acceptAttr(p.allowPdf);
-  const imgAccept = "image/png,image/jpeg,image/webp,image/gif";
+
+  const canSubmit = !busy && !disabled && !readingFiles && (text.trim().length > 0 || files.length > 0);
+  const btnCls = isMobile ? "nx-mob-touch-btn" : "nx-icon-btn";
 
   return (
-    <div className="composer glass">
-      {(files.length > 0 || reading) && (
-        <ul className="chips">
-          {files.map((f, i) => (
-            <li key={i} className="chip att">
-              {f.data && f.mime.startsWith("image/") && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`data:${f.mime};base64,${f.data}`} alt="" />
-              )}
-              <span className="nm">{f.name}</span>
-              <span className="sz">{sizeLabel(f)}</span>
-              <button aria-label="Remove" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>×</button>
-            </li>
-          ))}
-          {reading && <li className="chip att" role="status">{t.reading}</li>}
-        </ul>
-      )}
-      {p.listening && (
-        <div className="listening" role="status">
-          <span className="pulse" />
-          <span>{p.interim || t.listening}</span>
+    <div className="nx-composer">
+      {(fileError || micError) && (
+        <div className="nx-banner error">
+          <span>{fileError || micError}</span>
+          <button
+            type="button"
+            className="nx-banner-close"
+            onClick={() => {
+              setFileError(null);
+              onClearMicError();
+            }}
+            aria-label={t.close}
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
-      <div className="row">
-        <input ref={fileRef} type="file" hidden multiple accept={docAccept} onChange={(e) => onFiles(e.target.files, fileRef.current)} />
-        <input ref={imgRef} type="file" hidden multiple accept={imgAccept} onChange={(e) => onFiles(e.target.files, imgRef.current)} />
-        <button className="icon" title={t.attach} aria-label={t.attach} disabled={p.listening}
-          onClick={() => (p.mobile ? setSheet(true) : fileRef.current?.click())}>
-          <Icon name="plus" size={18} />
-        </button>
-        {p.searchAvailable && (
-          <button className={`icon ${p.useSearch ? "on" : ""}`} title={t.webSearch} aria-label={t.webSearch} aria-pressed={p.useSearch} onClick={p.onToggleSearch}>
-            <Icon name="globe" size={18} />
+
+      {listening && (
+        <div className="nx-composer-interim" role="status" aria-live="polite">
+          <span className="nx-live-dot recording" aria-hidden="true" />
+          <span style={{ flex: 1 }}>{interim || t.listening}</span>
+          <button type="button" className="nx-secondary-btn" style={{ minHeight: 32, padding: "4px 10px" }} onClick={onStopMic}>
+            {t.micStop}
           </button>
-        )}
+          <button type="button" className="nx-tiny-btn" onClick={onCancelMic} aria-label={t.micCancel}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="nx-composer-files">
+          {files.map((f, i) => (
+            <span key={`${f.name}-${i}`} className="nx-file-chip">
+              <span>{f.name}</span>
+              <button
+                type="button"
+                className="nx-file-remove"
+                onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                aria-label={t.delete}
+              >
+                <X size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="nx-composer-row">
         <textarea
-          value={text}
+          ref={areaRef}
           rows={1}
-          maxLength={p.maxChars}
-          placeholder={t.placeholder}
-          onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; }}
-          onKeyDown={onKey}
-          disabled={p.listening}
+          value={text}
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={readingFiles ? t.reading : t.placeholder}
+          aria-label={t.placeholder}
         />
-        {p.micSupported && !p.listening && (
-          <button className="icon" title={t.mic} aria-label={t.mic} onClick={p.onMicStart} disabled={p.streaming}>
-            <Icon name="mic" size={18} />
-          </button>
-        )}
-        {p.listening && (
-          <>
-            <button className="icon" title={t.micCancel} aria-label={t.micCancel} onClick={p.onMicCancel}>
-              <Icon name="close" size={18} />
-            </button>
-            <button className="icon rec" title={t.micStop} aria-label={t.micStop} onClick={p.onMicStop}>
-              <Icon name="stop" size={18} />
-            </button>
-          </>
-        )}
-        {p.streaming ? (
-          <button className="send stop" onClick={p.onStop}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <Icon name="stop" size={16} />
-              <span>{t.stop}</span>
-            </span>
-          </button>
-        ) : (
-          <button className="send" onClick={submit} disabled={p.listening || reading || (!text.trim() && !files.length)}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <Icon name="send" size={16} />
-              <span>{t.send}</span>
-            </span>
-          </button>
-        )}
       </div>
 
-      <BottomSheet open={sheet} title={t.attachMenu} onClose={() => setSheet(false)}>
-        <ul className="m-actions">
-          <li><button onClick={() => { setSheet(false); imgRef.current?.click(); }}><Icon name="image" />{t.attachImage}</button></li>
-          <li><button onClick={() => { setSheet(false); fileRef.current?.click(); }}><Icon name="doc" />{t.attachFile}</button></li>
-        </ul>
-      </BottomSheet>
+      <div className="nx-composer-tools">
+        <div className="nx-composer-left">
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept={acceptAttr(allowPdf)}
+            onChange={handleFiles}
+            hidden
+          />
+          <button
+            type="button"
+            className={btnCls}
+            disabled={disabled || busy || files.length >= 4}
+            onClick={() => fileRef.current?.click()}
+            title={t.attach}
+            aria-label={t.attach}
+          >
+            <Paperclip size={18} />
+          </button>
+
+          {searchEnabled && (
+            <button
+              type="button"
+              className={`${btnCls}${useSearch ? " active" : ""}`}
+              disabled={disabled}
+              onClick={onToggleSearch}
+              title={t.webSearch}
+              aria-label={t.webSearch}
+              aria-pressed={useSearch}
+            >
+              <Globe size={18} />
+              {!isMobile && <span>{t.webSearch}</span>}
+            </button>
+          )}
+
+          {micSupported && (
+            <button
+              type="button"
+              className={`${btnCls}${listening ? " active" : ""}`}
+              disabled={disabled || busy || micPermission === "denied"}
+              onClick={listening ? onStopMic : onStartMic}
+              title={micPermission === "denied" ? t.micDenied : listening ? t.micStop : t.mic}
+              aria-label={listening ? t.micStop : t.mic}
+            >
+              {micPermission === "denied" ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {text.length > maxInputChars * 0.85 && (
+            <span className="tabular" style={{ fontSize: 12, color: text.length > maxInputChars ? "var(--status-err)" : "var(--text-muted)" }}>
+              {text.length}/{maxInputChars}
+            </span>
+          )}
+
+          {busy ? (
+            <button type="button" className="nx-send-btn stop" onClick={onStop} aria-label={t.stop}>
+              <Square size={15} />
+              {!isMobile && <span>{t.stop}</span>}
+            </button>
+          ) : (
+            <button type="button" className="nx-send-btn" disabled={!canSubmit} onClick={submit} aria-label={t.send}>
+              <ArrowUp size={18} />
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

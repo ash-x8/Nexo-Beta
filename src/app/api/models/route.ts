@@ -6,13 +6,15 @@ import { availableModels } from "@/server/providers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Models the signed-in user may choose from. If the provider can't list them, the picker is simply hidden. */
+/** Models the signed-in user may choose from. Returns empty list cleanly if listing fails. */
 export async function GET(req: Request) {
   try {
     const uid = await requireUser(req);
     checkRate(uid, "models");
     const current = activeModel();
-    if (!providerConfigured()) return Response.json({ current, models: [] });
+    if (!providerConfigured()) {
+      return Response.json({ current, models: [] });
+    }
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 8000);
     try {

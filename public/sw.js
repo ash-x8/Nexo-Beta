@@ -1,10 +1,10 @@
 /* NEXO AI service worker.
- * - HTML pages are NEVER cached, so a deploy can never be shadowed by an old page or old bundle references.
+ * - HTML pages are NEVER cached, so deploys are never shadowed by stale bundles.
  * - /_next/static/* is content-hashed and immutable -> cache-first.
  * - Icons/manifest -> stale-while-revalidate.
- * - /api/*, non-GET, cross-origin and any request carrying credentials are never touched (no private chats/tokens cached).
- * - A new worker waits until the user taps "Update" in the app (SKIP_WAITING message), so no surprise mid-chat reloads. */
-const VERSION = "nexo-v2";
+ * - /api/*, non-GET, cross-origin, and credentialed requests are never cached.
+ * - A new worker waits for user confirmation (SKIP_WAITING) to avoid mid-chat reloads. */
+const VERSION = "nexo-v3";
 const STATIC = `${VERSION}-static`;
 const SHELL = `${VERSION}-shell`;
 const PRECACHE = ["/offline.html", "/icons/icon-192.png", "/manifest.webmanifest"];
@@ -15,7 +15,8 @@ self.addEventListener("install", (e) => {
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys()
+    caches
+      .keys()
       .then((keys) => Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
@@ -29,7 +30,7 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || req.headers.has("authorization")) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/assets/aistudio/") || req.headers.has("authorization")) return;
 
   if (req.mode === "navigate") {
     e.respondWith(fetch(req).catch(() => caches.match("/offline.html")));
@@ -51,7 +52,12 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       caches.open(SHELL).then(async (c) => {
         const hit = await c.match(req);
-        const net = fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }).catch(() => hit);
+        const net = fetch(req)
+          .then((res) => {
+            if (res.ok) c.put(req, res.clone());
+            return res;
+          })
+          .catch(() => hit);
         return hit || net;
       })
     );

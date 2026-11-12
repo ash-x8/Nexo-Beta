@@ -1,11 +1,15 @@
-import { env } from "./env";
+import { readEnv } from "./env";
 import type { Source } from "@/lib/types";
 
-export interface SearchResult { context: string; sources: Source[] }
+export interface SearchResult {
+  context: string;
+  sources: Source[];
+}
 
 /** Tavily web search. Returns null when search is not configured or fails (chat continues without it). */
 export async function webSearch(query: string, signal: AbortSignal): Promise<SearchResult | null> {
-  if (!env.tavilyKey) return null;
+  const env = readEnv();
+  if (!env.tavilyKey || !query.trim()) return null;
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
@@ -14,12 +18,14 @@ export async function webSearch(query: string, signal: AbortSignal): Promise<Sea
       signal
     });
     if (!res.ok) return null;
-    const j: any = await res.json();
-    const results: { title: string; url: string; content: string }[] = (j.results || []).slice(0, 5);
+    const j = (await res.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> };
+    const results = (j.results || []).filter((r) => r.url && r.title).slice(0, 5);
     if (!results.length) return null;
     return {
-      sources: results.map((r) => ({ title: r.title, url: r.url })),
-      context: results.map((r, i) => `[${i + 1}] ${r.title} (${r.url})\n${String(r.content).slice(0, 700)}`).join("\n\n")
+      sources: results.map((r) => ({ title: String(r.title), url: String(r.url) })),
+      context: results
+        .map((r, i) => `[${i + 1}] ${r.title} (${r.url})\n${String(r.content || "").slice(0, 700)}`)
+        .join("\n\n")
     };
   } catch {
     return null;

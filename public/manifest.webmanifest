@@ -7,12 +7,9 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#07080c",
-  "theme_color": "#07080c",
-  "categories": [
-    "productivity",
-    "utilities"
-  ],
+  "background_color": "#06070a",
+  "theme_color": "#06070a",
+  "categories": ["productivity", "utilities"],
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -35,8 +32,6 @@
   ],
   "lang": "en",
   "dir": "ltr",
-  "display_override": [
-    "standalone"
-  ],
+  "display_override": ["standalone"],
   "prefer_related_applications": false
 }

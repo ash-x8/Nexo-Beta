@@ -1,80 +1,108 @@
 "use client";
-import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { firebaseReady } from "@/lib/firebase";
 import { dictionaries } from "@/lib/i18n";
-import Shell from "./Shell";
+import type { Lang } from "@/lib/types";
+import InstallButton from "./InstallButton";
+import JarvisCore from "./JarvisCore";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
-
-import { isWebGLAvailable } from "@/lib/webgl";
-
-const JarvisCore = dynamic(() => import("./JarvisCore"), { ssr: false });
+import Workspace from "./Workspace";
 
 function Gate() {
-  const { user, loading, signIn, signInGuest } = useAuth();
+  const { user, loading, configured, signIn, logout, getToken } = useAuth();
+  const [lang, setLang] = useState<Lang>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const p = JSON.parse(localStorage.getItem("nexo.prefs") || "{}");
+        if (p.ui === "si") return "si";
+      } catch {
+        /* ignore */
+      }
+    }
+    return "en";
+  });
+  const [signingIn, setSigningIn] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [webgl, setWebgl] = useState(() => isWebGLAvailable());
-  const onFail = useCallback(() => setWebgl(false), []);
-  const t = dictionaries.en;
 
-  if (loading) return <div className="landing"><div className="boot" aria-label="Loading" /></div>;
+  const t = dictionaries[lang];
 
-  if (!user) {
+  const switchLang = (next: Lang) => {
+    setLang(next);
+    document.documentElement.lang = next;
+    try {
+      const prev = JSON.parse(localStorage.getItem("nexo.prefs") || "{}");
+      localStorage.setItem("nexo.prefs", JSON.stringify({ ...prev, ui: next }));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (loading) {
     return (
-      <main className="gate">
-        <div className="gate-core" aria-hidden="true">
-          {webgl ? <JarvisCore onFail={onFail} /> : <div className="core-fallback"><span /><span /><span /></div>}
-        </div>
-        <h1>NEXO AI</h1>
-        <p className="tag">{t.tagline}</p>
-        
-        {firebaseReady ? (
-          <div style={{ display: "grid", gap: "10px", width: "min(340px, 100%)" }}>
-            <button
-              className="send"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setErr(null);
-                const res = await signIn();
-                if (res) setErr(res);
-                setBusy(false);
-              }}
-            >
-              {busy ? t.signingIn : t.signIn}
-            </button>
-            <button
-              className="m-ghost"
-              disabled={busy}
-              onClick={() => signInGuest()}
-              style={{ height: "46px", borderRadius: "14px" }}
-            >
-              Continue in Guest Mode
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: "10px", width: "min(340px, 100%)" }}>
-            <button
-              className="send"
-              onClick={() => signInGuest()}
-            >
-              Launch NEXO AI (Preview)
-            </button>
-            <p className="fine" style={{ margin: "4px 0", color: "var(--cyan)" }}>
-              Running in local preview mode. Cloud sync activates automatically when deployed to Vercel.
-            </p>
-          </div>
-        )}
-
-        {err && <p className="err" role="alert" style={{ marginTop: "12px" }}>{err}</p>}
-        <p className="fine">{t.signInFine}</p>
-      </main>
+      <div className="nx-boot">
+        <div className="nx-spinner" />
+      </div>
     );
   }
 
-  return <Shell />;
+  if (user) {
+    return <Workspace user={user} getToken={getToken} onLogout={logout} />;
+  }
+
+  return (
+    <main className="nx-auth-shell">
+      <div className="nx-auth-card">
+        <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <InstallButton label={t.install} iosPrompt={t.installIos} closeLabel={t.close} compact />
+          <div className="nx-seg" style={{ marginLeft: "auto" }}>
+            <button type="button" className={lang === "en" ? "active" : ""} onClick={() => switchLang("en")}>
+              EN
+            </button>
+            <button type="button" className={lang === "si" ? "active" : ""} onClick={() => switchLang("si")}>
+              සිං
+            </button>
+          </div>
+        </div>
+
+        <div className="nx-auth-orb">
+          <JarvisCore />
+        </div>
+
+        <h1 className="nx-auth-title">NEXO AI</h1>
+        <p className="nx-auth-sub">{t.tagline}</p>
+
+        {!configured ? (
+          <div className="nx-setup-box">
+            <strong>{t.setupTitle}</strong>
+            <span>{t.setupBody}</span>
+          </div>
+        ) : (
+          <>
+            {err && (
+              <div className="nx-banner error" style={{ width: "100%" }}>
+                <span>{err}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              className="nx-primary-btn"
+              disabled={signingIn}
+              onClick={async () => {
+                setErr(null);
+                setSigningIn(true);
+                const msg = await signIn();
+                if (msg) setErr(msg);
+                setSigningIn(false);
+              }}
+            >
+              <span>{signingIn ? t.signingIn : t.signIn}</span>
+            </button>
+            <p className="nx-auth-fine">{t.signInFine}</p>
+          </>
+        )}
+      </div>
+    </main>
+  );
 }
 
 export default function App() {
