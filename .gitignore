@@ -3,6 +3,7 @@ node_modules
 .env
 .env.local
 .env.*.local
-public/assets/aistudio/*.env
+bun.lock
+public/assets/aistudio/
 *.tsbuildinfo
 .vercel
