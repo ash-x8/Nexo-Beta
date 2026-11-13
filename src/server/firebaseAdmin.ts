@@ -8,29 +8,64 @@ export class ApiError extends Error {
   }
 }
 
-/** Reads the three credentials, tolerating common paste mistakes (quotes, trailing comma, whole JSON file). */
+export const PEM_BEGIN_MARKER = "-----BEGIN PRIVATE KEY-----";
+export const PEM_END_MARKER = "-----END PRIVATE KEY-----";
+
+function stripWrappingQuotes(raw: string): string {
+  let v = raw.trim().replace(/,\s*$/, "");
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
+/** Normalizes escaped newlines (\\n), CRLF, quotes, and trailing commas in PEM keys. */
+export function normalizePrivateKey(raw: string): string {
+  return stripWrappingQuotes(raw)
+    .replace(/\\\\r\\\\n/g, "\n")
+    .replace(/\\\\n/g, "\n")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+}
+
+/** Validates that a normalized PEM key includes both BEGIN and END PRIVATE KEY markers with content between them. */
+export function isValidPemPrivateKey(key: string): boolean {
+  const beginIdx = key.indexOf(PEM_BEGIN_MARKER);
+  const endIdx = key.indexOf(PEM_END_MARKER);
+  if (beginIdx === -1 || endIdx === -1 || endIdx <= beginIdx) return false;
+  const body = key.slice(beginIdx + PEM_BEGIN_MARKER.length, endIdx).replace(/\s+/g, "");
+  return body.length > 0;
+}
+
+/** Reads the three credentials, tolerating common paste mistakes (quotes, trailing comma, escaped newlines, whole JSON file). */
 export function readCredentials() {
-  let projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "";
-  let clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim().replace(/^["']|["'],?$/g, "");
-  let key = (process.env.FIREBASE_PRIVATE_KEY || "").trim();
+  let projectId = stripWrappingQuotes(process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "");
+  let clientEmail = stripWrappingQuotes(process.env.FIREBASE_CLIENT_EMAIL || "");
+  let key = stripWrappingQuotes(process.env.FIREBASE_PRIVATE_KEY || "");
 
   if (key.startsWith("{")) {
     try {
-      const j = JSON.parse(key);
-      key = j.private_key || "";
-      clientEmail = clientEmail || j.client_email || "";
-      projectId = projectId || j.project_id || "";
+      const j = JSON.parse(key) as { private_key?: unknown; client_email?: unknown; project_id?: unknown };
+      key = typeof j.private_key === "string" ? j.private_key : "";
+      if (!clientEmail && typeof j.client_email === "string") clientEmail = stripWrappingQuotes(j.client_email);
+      if (!projectId && typeof j.project_id === "string") projectId = stripWrappingQuotes(j.project_id);
     } catch {
       /* fall through to validation below */
     }
   }
-  key = key.replace(/,$/, "").replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
-  return { projectId: projectId.trim(), clientEmail, privateKey: key };
+
+  return {
+    projectId: projectId.trim(),
+    clientEmail: clientEmail.trim(),
+    privateKey: normalizePrivateKey(key)
+  };
 }
 
 export function hasAdminCredentials(): boolean {
   const { projectId, clientEmail, privateKey } = readCredentials();
-  return !!(projectId && clientEmail && privateKey && privateKey.includes("BEGIN PRIVATE KEY"));
+  return !!(projectId && clientEmail && privateKey && isValidPemPrivateKey(privateKey));
 }
 
 function app(): App {
@@ -44,7 +79,7 @@ function app(): App {
       "Server Firebase credentials are missing. Configure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY."
     );
   }
-  if (!privateKey.includes("BEGIN PRIVATE KEY")) {
+  if (!isValidPemPrivateKey(privateKey)) {
     throw new ApiError(
       500,
       "server_config",
@@ -53,7 +88,7 @@ function app(): App {
   }
   try {
     return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
-  } catch (e) {
+  } catch {
     console.error("[firebase-admin init] failed");
     throw new ApiError(
       500,

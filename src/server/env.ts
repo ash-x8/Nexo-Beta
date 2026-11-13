@@ -60,9 +60,11 @@ export function missingConfigKeys(): string[] {
   } else {
     missing.push("AI_PROVIDER");
   }
-  if (!process.env.FIREBASE_PROJECT_ID && !process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) missing.push("FIREBASE_PROJECT_ID");
-  if (!process.env.FIREBASE_CLIENT_EMAIL) missing.push("FIREBASE_CLIENT_EMAIL");
-  if (!process.env.FIREBASE_PRIVATE_KEY) missing.push("FIREBASE_PRIVATE_KEY");
+  if (!(process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "").trim()) {
+    missing.push("FIREBASE_PROJECT_ID");
+  }
+  if (!(process.env.FIREBASE_CLIENT_EMAIL || "").trim()) missing.push("FIREBASE_CLIENT_EMAIL");
+  if (!(process.env.FIREBASE_PRIVATE_KEY || "").trim()) missing.push("FIREBASE_PRIVATE_KEY");
   if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) missing.push("NEXT_PUBLIC_FIREBASE_API_KEY");
   if (!process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) missing.push("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
   if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) missing.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
