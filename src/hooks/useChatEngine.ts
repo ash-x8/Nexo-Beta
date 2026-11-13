@@ -358,6 +358,10 @@ export function useChatEngine({
 
       if (files.length) {
         lastFilesRef.current.set(userMsg.id, files);
+        if (lastFilesRef.current.size > 10) {
+          const oldestKey = lastFilesRef.current.keys().next().value;
+          if (oldestKey) lastFilesRef.current.delete(oldestKey);
+        }
       }
 
       const nextHistory = [...messages, userMsg];
@@ -370,6 +374,7 @@ export function useChatEngine({
         setError(firebaseMessage(e));
       }
 
+      if (activeIdRef.current !== convId) return;
       await runStream(convId, nextHistory, userMsg.id, useSearch);
     },
     [busy, config, messages, stopSpeaking, t, uid, runStream]

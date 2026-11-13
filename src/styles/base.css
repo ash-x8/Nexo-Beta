@@ -9,6 +9,7 @@ body {
   height: 100%;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
   background: var(--bg-canvas);
   color: var(--text-primary);
   font-family: var(--font-sans-stack);
@@ -136,7 +137,8 @@ button:disabled {
   font-family: var(--font-display-stack);
   font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
+  word-spacing: 0.08em;
   text-wrap: balance;
 }
 
@@ -271,6 +273,10 @@ button:disabled {
   width: 100%;
   height: 100%;
   position: relative;
+  border-radius: 50%;
+  overflow: hidden;
+  -webkit-mask-image: radial-gradient(circle, #000 54%, transparent 72%);
+  mask-image: radial-gradient(circle, #000 54%, transparent 72%);
 }
 
 .core-fallback {
@@ -345,6 +351,8 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .nx-msg-row.user {
@@ -365,6 +373,7 @@ button:disabled {
 }
 
 .nx-msg-bubble {
+  min-width: 0;
   max-width: 100%;
   border-radius: var(--radius-lg);
   padding: 13px 16px;
@@ -771,7 +780,9 @@ button:disabled {
 /* Segmented controls & toggles */
 .nx-seg {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  max-width: 100%;
   padding: 3px;
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);

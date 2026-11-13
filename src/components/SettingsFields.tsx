@@ -4,6 +4,7 @@ import { Check, Pencil, Plus, Trash2 } from "lucide-react";
 import { fetchModels, fetchUsage } from "@/lib/api";
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
+import { firebaseMessage } from "@/lib/errors";
 import { looksSensitive, MEMORY_LIMIT } from "@/lib/memory";
 import type { Prefs, ResponseStyle, Theme } from "@/lib/prefs";
 import { addMemory, deleteMemory, updateMemory } from "@/lib/store";
@@ -102,8 +103,12 @@ export default function SettingsFields({
       setMemErr(t.memorySensitive);
       return;
     }
-    await addMemory(user.uid, val);
-    setMemInput("");
+    try {
+      await addMemory(user.uid, val);
+      setMemInput("");
+    } catch (e) {
+      setMemErr(firebaseMessage(e));
+    }
   };
 
   const handleSaveEdit = async (id: string) => {
@@ -114,8 +119,12 @@ export default function SettingsFields({
       return;
     }
     setMemErr(null);
-    await updateMemory(user.uid, id, { text: val });
-    setEditId(null);
+    try {
+      await updateMemory(user.uid, id, { text: val });
+      setEditId(null);
+    } catch (e) {
+      setMemErr(firebaseMessage(e));
+    }
   };
 
   if (section === "general") {
@@ -357,7 +366,11 @@ export default function SettingsFields({
                   <button
                     type="button"
                     style={{ flex: 1, textAlign: "left", fontSize: 13.5, opacity: item.enabled === false ? 0.48 : 1 }}
-                    onClick={() => updateMemory(user.uid, item.id, { enabled: item.enabled === false })}
+                    onClick={() => {
+                      updateMemory(user.uid, item.id, { enabled: item.enabled === false }).catch((e) =>
+                        setMemErr(firebaseMessage(e))
+                      );
+                    }}
                   >
                     {item.text}
                   </button>
@@ -376,7 +389,9 @@ export default function SettingsFields({
                     <button
                       type="button"
                       className="nx-tiny-btn danger"
-                      onClick={() => deleteMemory(user.uid, item.id)}
+                      onClick={() => {
+                        deleteMemory(user.uid, item.id).catch((e) => setMemErr(firebaseMessage(e)));
+                      }}
                       aria-label={t.delete}
                     >
                       <Trash2 size={14} />

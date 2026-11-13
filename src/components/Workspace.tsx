@@ -37,6 +37,12 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
 
   const speaker = useSpeaker(getToken, Boolean(config?.ttsServer), prefs.voiceName);
 
+  useEffect(() => {
+    if (!speaker.speaking) {
+      setSpeakingMsgId(null);
+    }
+  }, [speaker.speaking]);
+
   const handleStopSpeak = useCallback(() => {
     speaker.stop();
     setSpeakingMsgId(null);

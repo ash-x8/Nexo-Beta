@@ -12,9 +12,10 @@ export function isWebGLAvailable(): boolean {
 
   try {
     const canvas = document.createElement("canvas");
-    const gl = (canvas.getContext("webgl2") ||
-      canvas.getContext("webgl") ||
-      canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
+    const opts: WebGLContextAttributes = { failIfMajorPerformanceCaveat: true };
+    const gl = (canvas.getContext("webgl2", opts) ||
+      canvas.getContext("webgl", opts) ||
+      canvas.getContext("experimental-webgl", opts)) as WebGLRenderingContext | null;
 
     if (!gl) {
       cachedSupport = false;

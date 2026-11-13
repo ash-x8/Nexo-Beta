@@ -26,7 +26,8 @@
   font-family: var(--font-display-stack);
   font-size: 20px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
+  word-spacing: 0.06em;
 }
 
 .nx-mob-meta-line {
@@ -450,9 +451,10 @@
 
 .nx-field-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px 12px;
 }
 
 .nx-field-label {

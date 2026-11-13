@@ -57,10 +57,13 @@ function CodeBlock({
 
   const handleCopy = () => {
     const raw = extractText(children).replace(/\n$/, "");
-    navigator.clipboard?.writeText(raw).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    });
+    navigator.clipboard
+      ?.writeText(raw)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {});
   };
 
   return (
@@ -106,10 +109,13 @@ export const MessageBubble = memo(function MessageBubble({
 
   const copyAll = () => {
     if (!msg.content) return;
-    navigator.clipboard?.writeText(msg.content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    });
+    navigator.clipboard
+      ?.writeText(msg.content)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {});
   };
 
   return (

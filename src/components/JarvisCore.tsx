@@ -23,12 +23,14 @@ interface Props {
 
 export default function JarvisCore({ onFail }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [useFallback, setUseFallback] = useState(() => !isWebGLAvailable());
+  const onFailRef = useRef(onFail);
+  onFailRef.current = onFail;
+  const [useFallback, setUseFallback] = useState(false);
 
   useEffect(() => {
     if (!isWebGLAvailable()) {
       setUseFallback(true);
-      onFail?.();
+      onFailRef.current?.();
       return;
     }
 
@@ -45,14 +47,14 @@ export default function JarvisCore({ onFail }: Props) {
     } catch {
       markWebGLFailed();
       setUseFallback(true);
-      onFail?.();
+      onFailRef.current?.();
       return;
     }
 
     if (!renderer || !renderer.domElement) {
       markWebGLFailed();
       setUseFallback(true);
-      onFail?.();
+      onFailRef.current?.();
       return;
     }
 
@@ -66,7 +68,7 @@ export default function JarvisCore({ onFail }: Props) {
       event.preventDefault();
       markWebGLFailed();
       setUseFallback(true);
-      onFail?.();
+      onFailRef.current?.();
     };
     domElement.addEventListener("webglcontextlost", onContextLost, false);
 
@@ -194,7 +196,7 @@ export default function JarvisCore({ onFail }: Props) {
         cancelAnimationFrame(raf);
         markWebGLFailed();
         setUseFallback(true);
-        onFail?.();
+        onFailRef.current?.();
       }
     };
     raf = requestAnimationFrame(frame);
@@ -230,7 +232,7 @@ export default function JarvisCore({ onFail }: Props) {
         /* ignore */
       }
     };
-  }, [onFail]);
+  }, []);
 
   if (useFallback) {
     return (

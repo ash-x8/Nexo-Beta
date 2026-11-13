@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { firebaseMessage } from "@/lib/errors";
 import { validateAttachmentMeta } from "@/lib/files";
 import { dictionaries } from "@/lib/i18n";
 import { looksSensitive, selectMemories } from "@/lib/memory";
 import { sanitizePrefs } from "@/lib/prefs";
+import { plainForSpeech } from "@/lib/useSpeaker";
 import { _resetLimitsForTest, acquireInflight, checkRate } from "@/server/limits";
+import { systemPrompt } from "@/server/prompt";
 
 afterEach(() => {
   _resetLimitsForTest();
@@ -72,5 +75,26 @@ describe("client libs & limits", () => {
     release();
     const release2 = acquireInflight("u1");
     release2();
+  });
+
+  it("builds personalized system prompts and strips markdown for speech", () => {
+    const prompt = systemPrompt({
+      language: "si",
+      responseStyle: "concise",
+      nickname: "Ash",
+      customInstructions: "Keep examples short.",
+      memory: ["Prefers TypeScript"],
+      searchContext: "[1] Example (https://example.com)"
+    });
+    expect(prompt).toContain("Sinhala");
+    expect(prompt).toContain("brief, direct");
+    expect(prompt).toContain("Ash");
+    expect(prompt).toContain("Keep examples short.");
+    expect(prompt).toContain("Prefers TypeScript");
+    expect(prompt).toContain("Fresh web search results");
+
+    const spoken = plainForSpeech("# Hello\nCheck [NEXO](https://example.com) and `code`\n```ts\nconst x = 1;\n```");
+    expect(spoken).toBe("Hello Check NEXO and code");
+    expect(firebaseMessage({ code: "permission-denied" })).toContain("firestore.rules");
   });
 });

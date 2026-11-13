@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Pause, Play, Square } from "lucide-react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
@@ -32,6 +32,7 @@ export default function DesktopAssistantPanel({
   useSearch
 }: Props) {
   const [webglFailed, setWebglFailed] = useState(false);
+  const handleWebglFail = useCallback(() => setWebglFailed(true), []);
 
   const stateLabel =
     state === "listening"
@@ -46,7 +47,7 @@ export default function DesktopAssistantPanel({
     <aside className="nx-right-panel" aria-label={t.assistantName}>
       <div className="nx-panel-orb-box">
         <div className="nx-panel-orb">
-          <JarvisCore onFail={() => setWebglFailed(true)} />
+          <JarvisCore onFail={handleWebglFail} />
         </div>
         <div className="nx-panel-state">
           <span className={`nx-live-dot ${state === "listening" ? "recording" : ""}`} aria-hidden="true" />

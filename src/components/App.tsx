@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { dictionaries } from "@/lib/i18n";
 import type { Lang } from "@/lib/types";
@@ -10,19 +10,21 @@ import Workspace from "./Workspace";
 
 function Gate() {
   const { user, loading, configured, signIn, logout, getToken } = useAuth();
-  const [lang, setLang] = useState<Lang>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const p = JSON.parse(localStorage.getItem("nexo.prefs") || "{}");
-        if (p.ui === "si") return "si";
-      } catch {
-        /* ignore */
-      }
-    }
-    return "en";
-  });
+  const [lang, setLang] = useState<Lang>("en");
   const [signingIn, setSigningIn] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem("nexo.prefs") || "{}");
+      if (p.ui === "si") {
+        setLang("si");
+        document.documentElement.lang = "si";
+      }
+    } catch {
+      /* ignore corrupt storage */
+    }
+  }, []);
 
   const t = dictionaries[lang];
 

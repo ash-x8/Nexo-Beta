@@ -65,7 +65,7 @@ interface Props {
 }
 
 export default function DesktopApp(props: Props) {
-  const { t, prefs, setPref, config, online, convs, activeId, messages, busy } = props;
+  const { t, prefs, setPref, config, online, convs, activeId, messages, busy, startNewChat, stopGeneration } = props;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [seedPrompt, setSeedPrompt] = useState<string | undefined>(undefined);
 
@@ -89,7 +89,7 @@ export default function DesktopApp(props: Props) {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.shiftKey && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        props.startNewChat();
+        startNewChat();
       } else if (mod && e.key === "/") {
         e.preventDefault();
         setPref("sidebarCollapsed", !prefs.sidebarCollapsed);
@@ -97,12 +97,12 @@ export default function DesktopApp(props: Props) {
         e.preventDefault();
         setSettingsOpen((v) => !v);
       } else if (e.key === "Escape" && busy) {
-        props.stopGeneration();
+        stopGeneration();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, prefs.sidebarCollapsed, props, setPref]);
+  }, [busy, prefs.sidebarCollapsed, setPref, startNewChat, stopGeneration]);
 
   const onScroll = () => {
     const el = scrollRef.current;
