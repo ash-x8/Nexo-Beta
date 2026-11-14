@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { UserProfile } from "@/lib/auth";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
@@ -8,9 +8,11 @@ import type {
   Attachment,
   ChatMessage,
   Conversation,
+  FeatureKey,
   MemoryItem,
   ModelCatalogItem,
-  PublicConfig
+  PublicConfig,
+  SessionInfo
 } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import { useKeyboardViewport } from "@/lib/useViewport";
@@ -28,6 +30,11 @@ interface Props {
   getToken: () => Promise<string>;
   onLogout: () => Promise<void>;
   config: PublicConfig | null;
+  session: SessionInfo | null;
+  features: Record<FeatureKey, boolean>;
+  announcements: PublicConfig["announcements"];
+  onDismissAnnouncement: (id: string) => void;
+  ownerMaintenanceBanner: ReactNode;
   modelsCatalog: ModelCatalogItem[];
   online: boolean;
   prefs: Prefs;
@@ -76,7 +83,9 @@ interface Props {
 }
 
 export default function MobileApp(props: Props) {
-  const { t, prefs, setPref, config, online, convs, activeId } = props;
+  const { t, prefs, setPref, config, session, features, online, convs, activeId } = props;
+  const isAdmin = session?.role === "SUPER_ADMIN";
+  const appName = config?.appName || "NEXO AI";
   const [tab, setTab] = useState<MobileTab>("home");
   const [inChat, setInChat] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -116,9 +125,14 @@ export default function MobileApp(props: Props) {
           title={activeConv?.title || t.newChat}
           online={online}
           busy={props.busy}
+          chatDisabled={!features.chat}
+          chatDisabledNote={!features.chat ? t.featureDisabledNote : undefined}
           assistantState={assistantState}
           error={props.error}
           fallbackNotice={props.fallbackNotice}
+          ownerMaintenanceBanner={props.ownerMaintenanceBanner}
+          announcements={props.announcements}
+          onDismissAnnouncement={props.onDismissAnnouncement}
           onClearError={props.clearError}
           onClearFallbackNotice={props.clearFallbackNotice}
           messages={props.messages}
@@ -128,6 +142,7 @@ export default function MobileApp(props: Props) {
           onLoadOlder={props.loadOlderMessages}
           speaking={props.speaking}
           paused={props.paused}
+          ttsEnabled={features.tts}
           speakingMsgId={props.speakingMsgId}
           onSpeakMsg={props.onSpeakMsg}
           onPauseSpeak={props.onPauseSpeak}
@@ -137,9 +152,10 @@ export default function MobileApp(props: Props) {
           onEditResend={(msgId, nextText) =>
             props.editAndResendMessage(msgId, nextText, props.useSearch)
           }
-          searchEnabled={Boolean(config?.searchEnabled)}
+          searchEnabled={Boolean(config?.searchEnabled) && features.webSearch}
           useSearch={props.useSearch}
           onToggleSearch={() => props.setUseSearch(!props.useSearch)}
+          attachmentsEnabled={features.attachments}
           maxAttachmentMb={config?.maxAttachmentMb ?? 4}
           allowPdf={config?.provider === "gemini"}
           maxInputChars={config?.maxInputChars ?? 8000}
@@ -167,9 +183,14 @@ export default function MobileApp(props: Props) {
           {tab === "home" && (
             <MobileHome
               t={t}
+              appName={appName}
+              historyEnabled={features.conversationHistory}
+              ownerMaintenanceBanner={props.ownerMaintenanceBanner}
+              announcements={props.announcements}
+              onDismissAnnouncement={props.onDismissAnnouncement}
               lang={prefs.ui}
               nickname={prefs.nickname}
-              avatarOn={prefs.avatarOn}
+              avatarOn={prefs.avatarOn && features.jarvisMode}
               assistantState={assistantState}
               online={online}
               serverConfigured={Boolean(config?.configured)}
@@ -188,8 +209,8 @@ export default function MobileApp(props: Props) {
           {tab === "chats" && (
             <MobileChats
               t={t}
-              convs={convs}
-              hasMore={props.convsHasMore}
+              convs={features.conversationHistory ? convs : []}
+              hasMore={features.conversationHistory ? props.convsHasMore : false}
               onLoadMore={props.loadMoreConvs}
               onSelect={openExistingChat}
               onNewChat={() => openNewChat()}
@@ -213,6 +234,8 @@ export default function MobileApp(props: Props) {
               user={props.user}
               getToken={props.getToken}
               config={config}
+              session={session}
+              features={features}
               prefs={prefs}
               setPref={props.setPref}
               memory={props.memory}
@@ -231,6 +254,9 @@ export default function MobileApp(props: Props) {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         t={t}
+        appName={appName}
+        isAdmin={isAdmin}
+        historyEnabled={features.conversationHistory}
         user={props.user}
         convs={convs}
         activeId={activeId}

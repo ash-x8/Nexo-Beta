@@ -4,7 +4,7 @@ import { Activity, Bookmark, Cpu, Info, Sliders, User, Volume2, X } from "lucide
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
 import type { Prefs } from "@/lib/prefs";
-import type { MemoryItem, PublicConfig } from "@/lib/types";
+import type { FeatureKey, MemoryItem, PublicConfig, SessionInfo } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import SettingsFields, { type SettingsSection } from "../SettingsFields";
 
@@ -15,6 +15,8 @@ interface Props {
   user: UserProfile;
   getToken: () => Promise<string>;
   config: PublicConfig | null;
+  session?: SessionInfo | null;
+  features?: Record<FeatureKey, boolean>;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   memory: MemoryItem[];

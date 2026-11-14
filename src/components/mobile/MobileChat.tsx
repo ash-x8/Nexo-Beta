@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowLeft, Menu, Pause, Play, Plus, Square, X } from "lucide-react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
-import type { Attachment, ChatMessage } from "@/lib/types";
+import type { Attachment, ChatMessage, PublicConfig } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import AudioWaveform from "../AudioWaveform";
 import Composer from "../Composer";
@@ -14,9 +14,14 @@ interface Props {
   title: string;
   online: boolean;
   busy: boolean;
+  chatDisabled?: boolean;
+  chatDisabledNote?: string;
   assistantState: AvatarState;
   error: string | null;
   fallbackNotice: string | null;
+  ownerMaintenanceBanner?: ReactNode;
+  announcements?: PublicConfig["announcements"];
+  onDismissAnnouncement?: (id: string) => void;
   onClearError: () => void;
   onClearFallbackNotice: () => void;
   messages: ChatMessage[];
@@ -26,6 +31,7 @@ interface Props {
   onLoadOlder: () => void;
   speaking: boolean;
   paused: boolean;
+  ttsEnabled?: boolean;
   speakingMsgId: string | null;
   onSpeakMsg: (m: ChatMessage) => void;
   onPauseSpeak: () => void;
@@ -36,6 +42,7 @@ interface Props {
   searchEnabled: boolean;
   useSearch: boolean;
   onToggleSearch: () => void;
+  attachmentsEnabled?: boolean;
   maxAttachmentMb: number;
   allowPdf: boolean;
   maxInputChars: number;
@@ -61,9 +68,14 @@ export default function MobileChat({
   title,
   online,
   busy,
+  chatDisabled = false,
+  chatDisabledNote,
   assistantState,
   error,
   fallbackNotice,
+  ownerMaintenanceBanner,
+  announcements = [],
+  onDismissAnnouncement,
   onClearError,
   onClearFallbackNotice,
   messages,
@@ -73,6 +85,7 @@ export default function MobileChat({
   onLoadOlder,
   speaking,
   paused,
+  ttsEnabled = true,
   speakingMsgId,
   onSpeakMsg,
   onPauseSpeak,
@@ -83,6 +96,7 @@ export default function MobileChat({
   searchEnabled,
   useSearch,
   onToggleSearch,
+  attachmentsEnabled = true,
   maxAttachmentMb,
   allowPdf,
   maxInputChars,
@@ -194,6 +208,31 @@ export default function MobileChat({
       )}
 
       <div ref={scrollRef} className="nx-mob-messages" onScroll={onScroll}>
+        {ownerMaintenanceBanner}
+
+        {announcements.length > 0 && (
+          <div className="nx-announcement-stack">
+            {announcements.map((a) => (
+              <div key={a.id} className={`nx-banner ${a.priority === "critical" ? "critical" : a.category}`}>
+                <div className="nx-announcement-content">
+                  <strong>{a.title}</strong>
+                  <span>{a.message}</span>
+                </div>
+                {onDismissAnnouncement && (
+                  <button
+                    type="button"
+                    className="nx-banner-close"
+                    onClick={() => onDismissAnnouncement(a.id)}
+                    aria-label={t.close}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {!online && (
           <div className="nx-banner offline">
             <span>{t.offlineNote}</span>
@@ -251,6 +290,7 @@ export default function MobileChat({
               isBusy={busy}
               isSpeakingThis={speaking && speakingMsgId === m.id}
               isPaused={paused}
+              ttsEnabled={ttsEnabled}
               canRegenerate={m.id === lastAssistantId}
               onSpeak={onSpeakMsg}
               onPause={onPauseSpeak}
@@ -278,11 +318,13 @@ export default function MobileChat({
         <Composer
           t={t}
           busy={busy}
-          disabled={!online}
+          disabled={!online || chatDisabled}
+          disabledNote={chatDisabledNote}
           isMobile
           searchEnabled={searchEnabled}
           useSearch={useSearch}
           onToggleSearch={onToggleSearch}
+          attachmentsEnabled={attachmentsEnabled}
           maxAttachmentMb={maxAttachmentMb}
           allowPdf={allowPdf}
           maxInputChars={maxInputChars}

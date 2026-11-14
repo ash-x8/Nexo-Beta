@@ -25,6 +25,7 @@ interface Props {
   isBusy: boolean;
   isSpeakingThis: boolean;
   isPaused: boolean;
+  ttsEnabled?: boolean;
   canRegenerate: boolean;
   onSpeak: (msg: ChatMessage) => void;
   onPause: () => void;
@@ -99,6 +100,7 @@ export const MessageBubble = memo(function MessageBubble({
   isBusy,
   isSpeakingThis,
   isPaused,
+  ttsEnabled = true,
   canRegenerate,
   onSpeak,
   onPause,
@@ -316,6 +318,7 @@ export const MessageBubble = memo(function MessageBubble({
           )}
 
           {msg.content &&
+            ttsEnabled &&
             (!isSpeakingThis ? (
               <button type="button" className="nx-action-btn" onClick={() => onSpeak(msg)}>
                 <Volume2 size={14} />

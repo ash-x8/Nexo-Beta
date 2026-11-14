@@ -11,10 +11,10 @@ import { isWebGLAvailable, markWebGLFailed } from "@/lib/webgl";
  * Reads avatarBus.state / avatarBus.level every frame without React re-renders.
  */
 const PALETTE: Record<AvatarState, number> = {
-  idle: 0x4aa8ff,
-  listening: 0x8a6bff,
-  thinking: 0xb58cff,
-  speaking: 0x3df0d0,
+  idle: 0x00d6c5,
+  listening: 0x438bff,
+  thinking: 0x7c8cff,
+  speaking: 0x2dd4a8,
   error: 0xef4444
 };
 

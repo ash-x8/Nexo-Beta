@@ -10,10 +10,12 @@ interface Props {
   t: Dict;
   busy: boolean;
   disabled?: boolean;
+  disabledNote?: string;
   isMobile: boolean;
   searchEnabled: boolean;
   useSearch: boolean;
   onToggleSearch: () => void;
+  attachmentsEnabled?: boolean;
   maxAttachmentMb: number;
   allowPdf: boolean;
   maxInputChars: number;
@@ -35,10 +37,12 @@ export default function Composer({
   t,
   busy,
   disabled = false,
+  disabledNote,
   isMobile,
   searchEnabled,
   useSearch,
   onToggleSearch,
+  attachmentsEnabled = true,
   maxAttachmentMb,
   allowPdf,
   maxInputChars,
@@ -123,6 +127,11 @@ export default function Composer({
 
   return (
     <div className="nx-composer">
+      {disabledNote && (
+        <div className="nx-banner warning">
+          <span>{disabledNote}</span>
+        </div>
+      )}
       {(fileError || micError) && (
         <div className="nx-banner error">
           <span>{fileError || micError}</span>
@@ -186,24 +195,28 @@ export default function Composer({
 
       <div className="nx-composer-tools">
         <div className="nx-composer-left">
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            accept={acceptAttr(allowPdf)}
-            onChange={handleFiles}
-            hidden
-          />
-          <button
-            type="button"
-            className={btnCls}
-            disabled={disabled || busy || files.length >= 4}
-            onClick={() => fileRef.current?.click()}
-            title={t.attach}
-            aria-label={t.attach}
-          >
-            <Paperclip size={18} />
-          </button>
+          {attachmentsEnabled && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept={acceptAttr(allowPdf)}
+                onChange={handleFiles}
+                hidden
+              />
+              <button
+                type="button"
+                className={btnCls}
+                disabled={disabled || busy || files.length >= 4}
+                onClick={() => fileRef.current?.click()}
+                title={t.attach}
+                aria-label={t.attach}
+              >
+                <Paperclip size={18} />
+              </button>
+            </>
+          )}
 
           {searchEnabled && (
             <button

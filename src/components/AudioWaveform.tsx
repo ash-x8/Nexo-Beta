@@ -56,12 +56,12 @@ export default function AudioWaveform({ height = 28, bars = 24 }: Props) {
         s === "error"
           ? "#ef4444"
           : s === "speaking"
-            ? "#2dd4bf"
+            ? "#2dd4a8"
             : s === "listening"
-              ? "#8b6cff"
+              ? "#438bff"
               : s === "thinking"
-                ? "#a855f7"
-                : "#3b9eff";
+                ? "#7c8cff"
+                : "#00d6c5";
 
       const gap = 3;
       const barW = Math.max(2, (w - gap * (bars - 1)) / bars);

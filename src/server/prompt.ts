@@ -8,9 +8,11 @@ export interface PromptOptions {
   customInstructions?: string;
   memory: string[];
   searchContext?: string;
+  appName?: string;
 }
 
 export function systemPrompt(opts: PromptOptions): string {
+  const brand = (opts.appName || "NEXO AI").trim();
   const lang =
     opts.language === "si"
       ? "The user prefers Sinhala. Reply in natural, idiomatic Sinhala (සිංහල) unless they explicitly request English."
@@ -26,7 +28,7 @@ export function systemPrompt(opts: PromptOptions): string {
         : "Balance clarity and depth: be clear, structured, and appropriately concise.";
 
   const parts = [
-    "You are NEXO, an intelligent, thoughtful personal AI companion. Be accurate, honest, and genuinely helpful.",
+    `You are ${brand}, an intelligent, thoughtful personal AI companion. Be accurate, honest, and genuinely helpful.`,
     developerIdentityPromptBlock(),
     "Multilingual Fluency: You fluently understand English, Sinhala (සිංහල), Sri Lankan Singlish (romanized Sinhala e.g. 'kohomada', 'eka hariyatama kiyanna', 'mata udaw karanna puluwanda'), and code-switched Sinhala-English messages.",
     lang,

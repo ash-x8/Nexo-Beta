@@ -2,25 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockRequireUser,
+  mockRequireAuthContext,
   mockReadUsage,
   mockConsumeDaily,
   mockCheckRate,
   mockAcquireInflight,
-  mockRecordUsageMetric
+  mockRecordUsageMetric,
+  mockRecordGenerationTelemetry
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
+  mockRequireAuthContext: vi.fn(),
   mockReadUsage: vi.fn(),
   mockConsumeDaily: vi.fn(),
   mockCheckRate: vi.fn(),
   mockAcquireInflight: vi.fn(() => () => {}),
-  mockRecordUsageMetric: vi.fn()
+  mockRecordUsageMetric: vi.fn(),
+  mockRecordGenerationTelemetry: vi.fn()
 }));
 
 vi.mock("@/server/firebaseAdmin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/firebaseAdmin")>();
   return {
     ...actual,
-    requireUser: mockRequireUser
+    requireUser: mockRequireUser,
+    requireAuthContext: mockRequireAuthContext
   };
 });
 
@@ -32,7 +37,8 @@ vi.mock("@/server/limits", async (importOriginal) => {
     consumeDaily: mockConsumeDaily,
     checkRate: mockCheckRate,
     acquireInflight: mockAcquireInflight,
-    recordUsageMetric: mockRecordUsageMetric
+    recordUsageMetric: mockRecordUsageMetric,
+    recordGenerationTelemetry: mockRecordGenerationTelemetry
   };
 });
 
@@ -40,18 +46,36 @@ import { GET as getConfig } from "@/app/api/config/route";
 import { GET as getModels } from "@/app/api/models/route";
 import { GET as getUsage } from "@/app/api/usage/route";
 import { POST as postChat } from "@/app/api/chat/route";
-import { ApiError } from "@/server/firebaseAdmin";
+import { ApiError, type AuthContext } from "@/server/firebaseAdmin";
 import { _resetModelRegistryForTest } from "@/server/modelsRegistry";
 import { _resetModelCacheForTest } from "@/server/providers";
+import { _resetRuntimeConfigCacheForTest } from "@/server/runtimeConfig";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
+
+function makeAuthCtx(overrides: Partial<AuthContext> = {}): AuthContext {
+  return {
+    uid: "user-123",
+    email: "user@example.com",
+    emailVerified: true,
+    displayName: "Standard User",
+    photoURL: null,
+    role: "USER",
+    isOwner: false,
+    status: "active",
+    suspendedReason: "",
+    featureOverrides: {},
+    ...overrides
+  };
+}
 
 afterEach(() => {
   process.env = { ...ORIG_ENV };
   globalThis.fetch = ORIG_FETCH;
   _resetModelRegistryForTest();
   _resetModelCacheForTest();
+  _resetRuntimeConfigCacheForTest();
   vi.clearAllMocks();
 });
 
@@ -77,11 +101,11 @@ describe("API routes integration", () => {
   });
 
   it("GET /api/usage rejects unauthenticated calls with 401 and returns usage when authenticated", async () => {
-    mockRequireUser.mockRejectedValueOnce(new ApiError(401, "unauthenticated", "Sign in to use NEXO."));
+    mockRequireAuthContext.mockRejectedValueOnce(new ApiError(401, "unauthenticated", "Sign in to use NEXO."));
     const unauth = await getUsage(new Request("http://localhost/api/usage"));
     expect(unauth.status).toBe(401);
 
-    mockRequireUser.mockResolvedValueOnce("user-123");
+    mockRequireAuthContext.mockResolvedValueOnce(makeAuthCtx());
     mockReadUsage.mockResolvedValueOnce({
       requests: 3,
       tts: 1,
@@ -103,14 +127,14 @@ describe("API routes integration", () => {
   });
 
   it("GET /api/models enforces auth and returns free-only catalog", async () => {
-    mockRequireUser.mockRejectedValueOnce(new ApiError(401, "unauthenticated", "Sign in."));
+    mockRequireAuthContext.mockRejectedValueOnce(new ApiError(401, "unauthenticated", "Sign in."));
     const unauth = await getModels(new Request("http://localhost/api/models"));
     expect(unauth.status).toBe(401);
 
     process.env.AI_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "secret-key";
     process.env.GEMINI_MODEL = "gemini-2.5-flash";
-    mockRequireUser.mockResolvedValueOnce("user-123");
+    mockRequireAuthContext.mockResolvedValueOnce(makeAuthCtx());
     globalThis.fetch = vi.fn().mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -136,7 +160,7 @@ describe("API routes integration", () => {
     process.env.GEMINI_API_KEY = "secret-key";
     process.env.GEMINI_MODEL = "gemini-2.5-flash";
 
-    mockRequireUser.mockResolvedValueOnce("user-123");
+    mockRequireAuthContext.mockResolvedValueOnce(makeAuthCtx());
     mockConsumeDaily.mockResolvedValueOnce(undefined);
 
     const enc = new TextEncoder();
@@ -175,7 +199,7 @@ describe("API routes integration", () => {
     process.env.AI_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "secret-key";
     process.env.GEMINI_MODEL = "gemini-2.5-flash";
-    mockRequireUser.mockResolvedValueOnce("user-123");
+    mockRequireAuthContext.mockResolvedValueOnce(makeAuthCtx());
 
     const req = new Request("http://localhost/api/chat", {
       method: "POST",
@@ -196,7 +220,7 @@ describe("API routes integration", () => {
     process.env.AI_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "secret-key";
     process.env.GEMINI_MODEL = "gemini-2.5-flash";
-    mockRequireUser.mockResolvedValueOnce("user-123");
+    mockRequireAuthContext.mockResolvedValueOnce(makeAuthCtx());
     mockConsumeDaily.mockResolvedValueOnce(undefined);
 
     const enc = new TextEncoder();

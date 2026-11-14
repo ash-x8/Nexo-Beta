@@ -105,14 +105,14 @@ button:disabled {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(640px 360px at 50% 0%, rgba(59, 158, 255, 0.14), transparent 72%),
-    radial-gradient(480px 320px at 80% 100%, rgba(139, 108, 255, 0.1), transparent 70%),
+    radial-gradient(640px 360px at 50% 0%, rgba(0, 214, 197, 0.12), transparent 72%),
+    radial-gradient(480px 320px at 80% 100%, rgba(67, 139, 255, 0.1), transparent 70%),
     var(--bg-canvas);
 }
 
 .nx-auth-card {
   width: 100%;
-  max-width: 440px;
+  max-width: 460px;
   padding: 32px 28px;
   border-radius: var(--radius-xl);
   background: var(--bg-surface);
@@ -147,7 +147,7 @@ button:disabled {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.55;
-  max-width: 34ch;
+  max-width: 36ch;
 }
 
 .nx-primary-btn {
@@ -156,7 +156,7 @@ button:disabled {
   padding: 12px 20px;
   border-radius: var(--radius-md);
   background: var(--accent-grad);
-  color: #ffffff;
+  color: var(--accent-ink);
   font-weight: 600;
   font-size: 14px;
   display: inline-flex;
@@ -253,10 +253,54 @@ button:disabled {
   color: var(--status-err);
 }
 
-.nx-banner.offline {
-  background: rgba(245, 185, 66, 0.12);
-  border: 1px solid rgba(245, 185, 66, 0.3);
+.nx-banner.offline,
+.nx-banner.warning {
+  background: var(--status-warn-bg);
+  border: 1px solid var(--status-warn-border);
   color: var(--status-warn);
+}
+
+.nx-banner.info {
+  background: rgba(0, 214, 197, 0.09);
+  border: 1px solid rgba(0, 214, 197, 0.25);
+  color: var(--text-primary);
+}
+
+.nx-banner.update {
+  background: rgba(67, 139, 255, 0.11);
+  border: 1px solid rgba(67, 139, 255, 0.28);
+  color: var(--text-primary);
+}
+
+.nx-banner.maintenance {
+  background: var(--status-warn-bg);
+  border: 1px solid var(--status-warn-border);
+  color: var(--status-warn);
+}
+
+.nx-banner.critical {
+  background: var(--status-err-bg);
+  border: 1px solid var(--status-err-border);
+  color: var(--status-err);
+}
+
+.nx-announcement-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-announcement-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nx-announcement-content strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .nx-banner-close {
@@ -266,6 +310,7 @@ button:disabled {
   display: grid;
   place-items: center;
   color: inherit;
+  flex-shrink: 0;
 }
 
 /* 3D Core & CSS Orbital Fallback */
@@ -290,15 +335,15 @@ button:disabled {
 .core-fallback span {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(59, 158, 255, 0.42);
+  border: 1.5px solid rgba(0, 214, 197, 0.42);
 }
 
 .core-fallback span:nth-child(1) {
   width: 44%;
   height: 44%;
-  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--accent-blue) 45%, rgba(139, 108, 255, 0.35) 100%);
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--accent-blue) 45%, rgba(67, 139, 255, 0.35) 100%);
   border: 0;
-  box-shadow: 0 0 28px rgba(59, 158, 255, 0.45);
+  box-shadow: 0 0 28px rgba(0, 214, 197, 0.45);
 }
 
 .core-fallback span:nth-child(2) {
@@ -317,10 +362,10 @@ button:disabled {
 }
 
 .core-fallback.state-listening span:nth-child(1) {
-  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--accent-violet) 50%, rgba(139, 108, 255, 0.35) 100%);
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--accent-violet) 50%, rgba(67, 139, 255, 0.35) 100%);
 }
 .core-fallback.state-speaking span:nth-child(1) {
-  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #2dd4bf 50%, rgba(45, 212, 191, 0.35) 100%);
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #2dd4a8 50%, rgba(45, 212, 168, 0.35) 100%);
 }
 .core-fallback.state-error span:nth-child(1) {
   background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--status-err) 55%, rgba(239, 68, 68, 0.35) 100%);
@@ -777,7 +822,7 @@ button:disabled {
   padding: 0 14px;
   border-radius: var(--radius-md);
   background: var(--accent-grad);
-  color: #ffffff;
+  color: var(--accent-ink);
   font-weight: 600;
   display: inline-flex;
   align-items: center;

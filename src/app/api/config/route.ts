@@ -1,34 +1,71 @@
-import { activeModel, authConfigured, configuredProviders, providerConfigured, readEnv } from "@/server/env";
+import { authConfigured, configuredProviders, readEnv } from "@/server/env";
 import { DEVELOPER_INFO } from "@/server/developerProfile";
-import { GEMINI_FREE_FALLBACK_ORDER } from "@/server/modelsRegistry";
+import { getActivePublicAnnouncements, getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
 import type { PublicConfig } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-/** Public, secret-free server capabilities so the UI only enables features that actually work. */
+/** Public, secret-free runtime configuration & capabilities. */
 export async function GET() {
   const e = readEnv();
-  const providers = configuredProviders();
-  const fallbackReady = e.provider === "gemini" ? GEMINI_FREE_FALLBACK_ORDER.length > 1 : false;
+  const runtime = await getRuntimeConfig();
+  const g = runtime.globalConfig;
+  const pCfg = runtime.providerConfig;
+  const envProviders = configuredProviders();
+
+  const activeProviders = envProviders.filter((id) => {
+    const entry = pCfg.providers[id as keyof typeof pCfg.providers];
+    return entry ? entry.enabled : true;
+  });
+
+  const provider =
+    g.defaultProvider && pCfg.providers[g.defaultProvider]?.enabled !== false ? g.defaultProvider : e.provider;
+  const providerEntry = pCfg.providers[provider as keyof typeof pCfg.providers];
+  const model =
+    g.defaultModel ||
+    providerEntry?.defaultModel ||
+    (provider === "gemini" ? e.geminiModel : e.compatModel);
+
+  const configured =
+    provider === "gemini"
+      ? !!(e.geminiKey && model && providerEntry?.enabled !== false)
+      : !!(e.compatBase && e.compatKey && model && providerEntry?.enabled !== false);
+
+  const fallbackReady = provider === "gemini" ? pCfg.fallbackOrder.length > 1 : false;
+  const features = resolveEffectiveFeatures(runtime.featureFlags);
 
   const body: PublicConfig = {
-    configured: providerConfigured(),
+    appName: g.appName,
+    brandingSubtitle: g.brandingSubtitle,
+    defaultTheme: g.defaultTheme,
+    defaultLanguage: g.defaultLanguage,
+    allowLanguageSwitch: g.allowLanguageSwitch,
+    allowRegistration: g.allowRegistration,
+    configured,
     authConfigured: authConfigured(),
-    provider: e.provider,
-    model: activeModel(),
-    freeOnly: e.freeOnly,
-    configuredProviders: providers,
+    provider,
+    model,
+    freeOnly: g.freeOnlyMode,
+    configuredProviders: activeProviders,
     fallbackReady,
-    searchEnabled: !!e.tavilyKey,
-    ttsServer: !!e.geminiKey,
-    perMinute: e.perMinute,
-    dailyLimit: e.dailyLimit,
-    dailyTtsLimit: e.dailyTtsLimit,
-    maxInputChars: e.maxInputChars,
-    maxHistoryMessages: e.maxHistory,
-    maxAttachmentMb: e.maxAttachmentMb,
+    searchEnabled: !!e.tavilyKey && features.webSearch,
+    ttsServer: !!e.geminiKey && features.tts,
+    perMinute: g.rateLimitPerMinute,
+    dailyLimit: g.dailyRequestLimit,
+    dailyTtsLimit: g.dailyTtsLimit,
+    maxInputChars: g.maxInputChars,
+    maxHistoryMessages: g.maxHistoryMessages,
+    maxAttachmentMb: g.maxAttachmentMb,
+    features,
+    maintenance: {
+      enabled: runtime.maintenance.enabled,
+      title: runtime.maintenance.title,
+      message: runtime.maintenance.message,
+      expectedReturn: runtime.maintenance.expectedReturn
+    },
+    announcements: getActivePublicAnnouncements(runtime.announcements),
     developer: DEVELOPER_INFO,
-    version: "2.2.0"
+    version: "2.3.0"
   };
   return Response.json(body);
 }

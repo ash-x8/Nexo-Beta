@@ -1,4 +1,4 @@
-import type { ModelCatalogItem, ModelStatus } from "@/lib/types";
+import type { ModelCatalogItem, ModelOverride, ModelStatus } from "@/lib/types";
 
 interface KnownModelSpec {
   name: string;
@@ -139,11 +139,9 @@ export function isFreeEligibleModel(modelId: string, providerId: string, default
   if (PAID_MODEL_PATTERNS.test(id) && !id.endsWith(":free")) return false;
 
   if (providerId === "gemini") {
-    // Allow explicit Gemini Flash / Flash-Lite variants on free tier; never allow Pro/Ultra/Carbon/Argon
     return /flash|hydrogen|gemma/i.test(id) && !/pro|ultra|argon|carbon|paid/i.test(id);
   }
 
-  // OpenAI-compatible (e.g. OpenRouter `:free` models or local/self-hosted default model)
   if (id.endsWith(":free")) return true;
   if (defaultModel && id === defaultModel && !PAID_MODEL_PATTERNS.test(id)) return true;
   return false;
@@ -161,19 +159,23 @@ export function classifyModel(
   id: string,
   providerId: string,
   defaultModel: string,
-  searchEnabled: boolean
+  searchEnabled: boolean,
+  override?: ModelOverride
 ): ModelCatalogItem {
   const known = KNOWN_MODELS[id];
-  const freeEligible = isFreeEligibleModel(id, providerId, defaultModel);
+  const baseFree = isFreeEligibleModel(id, providerId, defaultModel);
+  // Strict paid pattern block cannot be bypassed into free eligibility
+  const freeEligible = override?.freeEligible !== undefined && !PAID_MODEL_PATTERNS.test(id) ? override.freeEligible : baseFree;
   const status = getModelHealth(id);
 
   return {
     id,
-    name: formatModelDisplayName(id),
+    name: override?.displayName || formatModelDisplayName(id),
     provider: providerId,
     freeEligible,
     status,
     isDefault: id === defaultModel,
+    enabled: override?.enabled ?? true,
     capabilities: {
       streaming: true,
       vision: known ? known.vision : providerId === "gemini" || /vision|vl|4o|gemini/i.test(id),
@@ -181,11 +183,13 @@ export function classifyModel(
       webSearch: searchEnabled
     },
     contextWindow: known ? known.contextWindow : null,
-    limitNote: known
-      ? known.limitNote
-      : freeEligible
-        ? "Provider free tier (exact rate limit governed dynamically by upstream provider)"
-        : "Not verified as free-tier eligible"
+    limitNote:
+      override?.limitNote ||
+      (known
+        ? known.limitNote
+        : freeEligible
+          ? "Provider free tier (exact rate limit governed dynamically by upstream provider)"
+          : "Not verified as free-tier eligible")
   };
 }
 
@@ -194,7 +198,9 @@ export function buildModelCatalog(
   reportedIds: string[],
   defaultModel: string,
   searchEnabled: boolean,
-  freeOnly: boolean
+  freeOnly: boolean,
+  overrides: Record<string, ModelOverride> = {},
+  includeDisabled = false
 ): ModelCatalogItem[] {
   const seen = new Set<string>();
   const combined: string[] = [];
@@ -213,13 +219,25 @@ export function buildModelCatalog(
     for (const id of GEMINI_FREE_FALLBACK_ORDER) {
       if (seen.has(id) || reportedIds.length === 0) pushUnique(id);
     }
+    if (includeDisabled) {
+      for (const id of Object.keys(KNOWN_MODELS)) {
+        if (KNOWN_MODELS[id].provider === "gemini") pushUnique(id);
+      }
+    }
   }
 
-  const items = combined.map((id) => classifyModel(id, providerId, defaultModel, searchEnabled));
-  const filtered = freeOnly ? items.filter((m) => m.freeEligible) : items;
+  const items = combined.map((id) => classifyModel(id, providerId, defaultModel, searchEnabled, overrides[id]));
+  const filtered = items.filter((m) => {
+    if (!includeDisabled && m.enabled === false && !m.isDefault) return false;
+    if (freeOnly && !m.freeEligible) return false;
+    return true;
+  });
 
   return filtered.sort((a, b) => {
     if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    const aOrder = overrides[a.id]?.sortOrder ?? 500;
+    const bOrder = overrides[b.id]?.sortOrder ?? 500;
+    if (aOrder !== bOrder) return aOrder - bOrder;
     if (a.freeEligible !== b.freeEligible) return a.freeEligible ? -1 : 1;
     return a.id.localeCompare(b.id);
   });
@@ -228,14 +246,17 @@ export function buildModelCatalog(
 /**
  * Returns strictly verified free-eligible fallback model candidates for automatic
  * recovery when `primaryModel` encounters quota, rate-limit, or temporary unavailability.
- * NEVER returns a paid model.
+ * NEVER returns a paid model or admin-disabled model.
  */
 export function getFreeFallbackCandidates(
   providerId: string,
   primaryModel: string,
   reportedIds: string[],
-  defaultModel: string
+  defaultModel: string,
+  customOrder?: string[],
+  overrides: Record<string, ModelOverride> = {}
 ): string[] {
+  const order = customOrder && customOrder.length > 0 ? customOrder : GEMINI_FREE_FALLBACK_ORDER;
   const pool = new Set<string>();
   if (defaultModel && isFreeEligibleModel(defaultModel, providerId, defaultModel)) {
     pool.add(defaultModel);
@@ -246,7 +267,7 @@ export function getFreeFallbackCandidates(
     }
   }
   if (providerId === "gemini") {
-    for (const id of GEMINI_FREE_FALLBACK_ORDER) {
+    for (const id of order) {
       if (reportedIds.length === 0 || reportedIds.includes(id)) {
         pool.add(id);
       }
@@ -255,13 +276,17 @@ export function getFreeFallbackCandidates(
 
   pool.delete(primaryModel);
 
-  const list = Array.from(pool).filter((id) => isFreeEligibleModel(id, providerId, defaultModel));
+  const list = Array.from(pool).filter((id) => {
+    if (overrides[id]?.enabled === false) return false;
+    return isFreeEligibleModel(id, providerId, defaultModel);
+  });
+
   return list.sort((a, b) => {
     const aAvail = getModelHealth(a) === "available" ? 0 : 1;
     const bAvail = getModelHealth(b) === "available" ? 0 : 1;
     if (aAvail !== bAvail) return aAvail - bAvail;
-    const aIdx = GEMINI_FREE_FALLBACK_ORDER.indexOf(a);
-    const bIdx = GEMINI_FREE_FALLBACK_ORDER.indexOf(b);
+    const aIdx = order.indexOf(a);
+    const bIdx = order.indexOf(b);
     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
     if (aIdx !== -1) return -1;
     if (bIdx !== -1) return 1;

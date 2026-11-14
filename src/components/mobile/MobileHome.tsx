@@ -1,14 +1,20 @@
 "use client";
-import { Compass, Menu, MessageSquarePlus, Mic } from "lucide-react";
+import type { ReactNode } from "react";
+import { Compass, Menu, MessageSquarePlus, Mic, X } from "lucide-react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 import { promptsFor } from "@/lib/prompts";
-import type { Conversation, Lang } from "@/lib/types";
+import type { Conversation, Lang, PublicConfig } from "@/lib/types";
 import AudioWaveform from "../AudioWaveform";
 import JarvisCore from "../JarvisCore";
 
 interface Props {
   t: Dict;
+  appName?: string;
+  historyEnabled?: boolean;
+  ownerMaintenanceBanner?: ReactNode;
+  announcements?: PublicConfig["announcements"];
+  onDismissAnnouncement?: (id: string) => void;
   lang: Lang;
   nickname: string;
   avatarOn: boolean;
@@ -35,6 +41,11 @@ function greeting(t: Dict): string {
 
 export default function MobileHome({
   t,
+  appName = "NEXO AI",
+  historyEnabled = true,
+  ownerMaintenanceBanner,
+  announcements = [],
+  onDismissAnnouncement,
   lang,
   nickname,
   avatarOn,
@@ -62,13 +73,37 @@ export default function MobileHome({
           <button type="button" className="nx-mob-topbar-btn" onClick={onOpenMenu} aria-label={t.menu}>
             <Menu size={20} />
           </button>
-          <span className="nx-mob-brand">NEXO AI</span>
+          <span className="nx-mob-brand">{appName}</span>
         </div>
         <div className="nx-mob-meta-line">
           <span className={`nx-live-dot ${!online ? "offline" : ""}`} aria-hidden="true" />
           <span>{!online ? t.offlineShort : serverConfigured ? t.available : t.unavailable}</span>
         </div>
       </div>
+
+      {(ownerMaintenanceBanner || announcements.length > 0) && (
+        <div className="nx-announcement-stack" style={{ marginBottom: 14 }}>
+          {ownerMaintenanceBanner}
+          {announcements.map((a) => (
+            <div key={a.id} className={`nx-banner ${a.priority === "critical" ? "critical" : a.category}`}>
+              <div className="nx-announcement-content">
+                <strong>{a.title}</strong>
+                <span>{a.message}</span>
+              </div>
+              {onDismissAnnouncement && (
+                <button
+                  type="button"
+                  className="nx-banner-close"
+                  onClick={() => onDismissAnnouncement(a.id)}
+                  aria-label={t.close}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <section className="nx-mob-hero">
         {avatarOn && (
@@ -102,7 +137,7 @@ export default function MobileHome({
         </button>
       </div>
 
-      {convs.length > 0 && (
+      {historyEnabled && convs.length > 0 && (
         <>
           <div className="nx-mob-section-head">
             <h2>{t.recent}</h2>

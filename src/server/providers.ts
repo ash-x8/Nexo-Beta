@@ -118,7 +118,13 @@ function geminiParts(m: ProviderMessage) {
   return parts;
 }
 
-async function* gemini(system: string, msgs: ProviderMessage[], signal: AbortSignal, model: string): AsyncGenerator<string> {
+async function* gemini(
+  system: string,
+  msgs: ProviderMessage[],
+  signal: AbortSignal,
+  model: string,
+  temperature = 0.7
+): AsyncGenerator<string> {
   const env = readEnv();
   if (!env.geminiKey) throw new ProviderError("server_config", "GEMINI_API_KEY is not configured on the server.");
   if (!model) throw new ProviderError("provider_model", "GEMINI_MODEL is not configured on the server.");
@@ -130,7 +136,7 @@ async function* gemini(system: string, msgs: ProviderMessage[], signal: AbortSig
     {
       systemInstruction: { parts: [{ text: system }] },
       contents: msgs.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: geminiParts(m) })),
-      generationConfig: { temperature: 0.7 }
+      generationConfig: { temperature }
     },
     signal
   );
@@ -159,7 +165,13 @@ async function* gemini(system: string, msgs: ProviderMessage[], signal: AbortSig
   if (blocked) throw new ProviderError("blocked", "The AI provider declined to answer this request.");
 }
 
-async function* compat(system: string, msgs: ProviderMessage[], signal: AbortSignal, model: string): AsyncGenerator<string> {
+async function* compat(
+  system: string,
+  msgs: ProviderMessage[],
+  signal: AbortSignal,
+  model: string,
+  temperature = 0.7
+): AsyncGenerator<string> {
   const env = readEnv();
   if (!env.compatBase || !env.compatKey || !model) {
     throw new ProviderError("server_config", "OpenAI-compatible provider credentials are incomplete.");
@@ -182,7 +194,7 @@ async function* compat(system: string, msgs: ProviderMessage[], signal: AbortSig
   const res = await post(
     `${env.compatBase}/chat/completions`,
     { Authorization: `Bearer ${env.compatKey}` },
-    { model, messages, stream: true, temperature: 0.7 },
+    { model, messages, stream: true, temperature },
     signal
   );
 
@@ -202,7 +214,13 @@ export interface Provider {
   id: string;
   supportsPdf: boolean;
   defaultModel: () => string;
-  stream: (system: string, msgs: ProviderMessage[], signal: AbortSignal, model: string) => AsyncGenerator<string>;
+  stream: (
+    system: string,
+    msgs: ProviderMessage[],
+    signal: AbortSignal,
+    model: string,
+    temperature?: number
+  ) => AsyncGenerator<string>;
   listModels: (signal: AbortSignal) => Promise<string[]>;
 }
 
@@ -253,8 +271,7 @@ const registry: Record<string, Provider> = {
   [compatProvider.id]: compatProvider
 };
 
-export function activeProvider(): Provider {
-  const providerId = readEnv().provider;
+export function getProviderById(providerId: string): Provider {
   const found = registry[providerId];
   if (!found) {
     throw new ProviderError("server_config", `Unsupported AI_PROVIDER "${providerId}". Use "gemini" or "openai-compatible".`);
@@ -262,26 +279,63 @@ export function activeProvider(): Provider {
   return found;
 }
 
-export function streamChat(system: string, msgs: ProviderMessage[], signal: AbortSignal, model?: string) {
-  const p = activeProvider();
-  return p.stream(system, msgs, signal, model || p.defaultModel());
+export function activeProvider(overrideProviderId?: string): Provider {
+  const providerId = overrideProviderId || readEnv().provider;
+  return getProviderById(providerId);
 }
 
-let modelCache: { providerId: string; at: number; list: string[] } | null = null;
+export function streamChat(
+  system: string,
+  msgs: ProviderMessage[],
+  signal: AbortSignal,
+  model?: string,
+  overrideProviderId?: string,
+  temperature = 0.7
+) {
+  const p = activeProvider(overrideProviderId);
+  return p.stream(system, msgs, signal, model || p.defaultModel(), temperature);
+}
+
+const modelCaches = new Map<string, { at: number; list: string[] }>();
 
 /** Models the configured provider reports as usable (cached 10 min per provider). */
-export async function availableModels(signal: AbortSignal): Promise<string[]> {
-  const p = activeProvider();
-  if (modelCache && modelCache.providerId === p.id && Date.now() - modelCache.at < 10 * 60_000) {
-    return modelCache.list;
+export async function availableModels(signal: AbortSignal, overrideProviderId?: string): Promise<string[]> {
+  const p = activeProvider(overrideProviderId);
+  const cached = modelCaches.get(p.id);
+  if (cached && Date.now() - cached.at < 10 * 60_000) {
+    return cached.list;
   }
   const list = await p.listModels(signal);
-  modelCache = { providerId: p.id, at: Date.now(), list };
+  modelCaches.set(p.id, { at: Date.now(), list });
   return list;
 }
 
 export function _resetModelCacheForTest(): void {
-  modelCache = null;
+  modelCaches.clear();
+}
+
+/** Tests provider connectivity cleanly on the server without returning API keys. */
+export async function testProviderConnectivity(
+  providerId: string,
+  signal: AbortSignal
+): Promise<{ ok: boolean; latencyMs: number; modelsFound: number; error?: string }> {
+  const start = Date.now();
+  try {
+    const p = getProviderById(providerId);
+    const list = await p.listModels(signal);
+    return {
+      ok: true,
+      latencyMs: Date.now() - start,
+      modelsFound: list.length
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - start,
+      modelsFound: 0,
+      error: (err as Error).message || "Provider connectivity test failed."
+    };
+  }
 }
 
 /** Wraps raw 16-bit mono PCM bytes with a valid RIFF/WAV header. */
@@ -307,10 +361,16 @@ export function pcmToWav(pcm: Buffer, sampleRate = 24000): ArrayBuffer {
 }
 
 /** Text-to-speech via Gemini. Handles both raw PCM (L16/PCM -> WAV) and encoded audio formats. */
-export async function synthesize(text: string, signal: AbortSignal): Promise<SynthesizedAudio> {
+export async function synthesize(
+  text: string,
+  signal: AbortSignal,
+  overrides?: { ttsModel?: string; ttsVoice?: string }
+): Promise<SynthesizedAudio> {
   const env = readEnv();
   if (!env.geminiKey) throw new ProviderError("tts_unavailable", "Server voice needs GEMINI_API_KEY.");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.geminiTtsModel)}:generateContent`;
+  const ttsModel = overrides?.ttsModel || env.geminiTtsModel;
+  const ttsVoice = overrides?.ttsVoice || env.geminiTtsVoice;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ttsModel)}:generateContent`;
   const res = await post(
     url,
     { "x-goog-api-key": env.geminiKey },
@@ -318,7 +378,7 @@ export async function synthesize(text: string, signal: AbortSignal): Promise<Syn
       contents: [{ parts: [{ text }] }],
       generationConfig: {
         responseModalities: ["AUDIO"],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: env.geminiTtsVoice } } }
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: ttsVoice } } }
       }
     },
     signal

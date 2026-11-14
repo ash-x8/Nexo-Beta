@@ -134,8 +134,8 @@ const en = {
   attachFile: "Document or code file",
   attachMenu: "Attach",
   reading: "Reading file…",
-  about: "About & Legal",
-  aboutBody: "NEXO AI 2.2 is an independent AI assistant Progressive Web App (PWA).",
+  about: "About & Credits",
+  aboutBody: "NEXO AI is an independent AI assistant Progressive Web App (PWA).",
   privacyTitle: "Privacy",
   privacyBody: "Your microphone activates only when tapped and never records in the background. Conversations, memory, and settings stay isolated to your signed-in account.",
   termsTitle: "Usage & Limits",
@@ -179,7 +179,15 @@ const en = {
   groupToday: "Today",
   groupYesterday: "Yesterday",
   groupWeek: "Previous 7 days",
-  groupOlder: "Older"
+  groupOlder: "Older",
+  adminCenter: "Super Admin Control Center",
+  maintenanceTitle: "Scheduled Maintenance",
+  maintenanceBypassNote: "Maintenance mode is active for users. Owner Super Admin bypass is enabled.",
+  suspendedTitle: "Account Access Suspended",
+  suspendedDefaultBody: "Your account has been suspended by the platform administrator. Contact the owner for assistance.",
+  featureDisabledNote: "This feature is currently disabled by the administrator.",
+  independentNotice:
+    "NEXO AI is an independent software platform owned and developed by Kushan A Wickramasinghe (Ash Wickramasinghe), and is not affiliated with or endorsed by third-party AI API providers."
 };
 
 export type Dict = typeof en;
@@ -318,8 +326,8 @@ const si: Dict = {
   attachFile: "ලේඛනයක් හෝ කේත ගොනුවක්",
   attachMenu: "ඇමුණන්න",
   reading: "ගොනුව කියවමින්…",
-  about: "පිළිබඳව සහ නීතිමය",
-  aboutBody: "NEXO AI 2.2 යනු ස්ථාපනය කළ හැකි ස්වාධීන Progressive Web App (PWA) යෙදුමකි.",
+  about: "පිළිබඳව සහ ගෞරවය",
+  aboutBody: "NEXO AI යනු ස්ථාපනය කළ හැකි ස්වාධීන Progressive Web App (PWA) යෙදුමකි.",
   privacyTitle: "පෞද්ගලිකත්වය",
   privacyBody: "මයික්‍රොෆෝනය ක්‍රියාත්මක වන්නේ ඔබ තට්ටු කළ විට පමණක් වන අතර පසුබිමේ කිසිවක් පටිගත නොවේ. සංවාද, මතකය සහ සැකසුම් ඔබේ ගිණුමට පමණක් සීමා වේ.",
   termsTitle: "භාවිතය සහ සීමාවන්",
@@ -363,7 +371,15 @@ const si: Dict = {
   groupToday: "අද",
   groupYesterday: "ඊයේ",
   groupWeek: "පසුගිය දින 7",
-  groupOlder: "පැරණි"
+  groupOlder: "පැරණි",
+  adminCenter: "Super Admin පාලන මධ්‍යස්ථානය",
+  maintenanceTitle: "නඩත්තු කටයුතු සිදුවෙමින් පවතී",
+  maintenanceBypassNote: "පරිශීලකයින් සඳහා නඩත්තු ප්‍රකාරය සක්‍රීයයි. Owner bypass සක්‍රීයයි.",
+  suspendedTitle: "ගිණුම් ප්‍රවේශය අත්හිටුවා ඇත",
+  suspendedDefaultBody: "පරිපාලක විසින් ඔබේ ගිණුම අත්හිටුවා ඇත. වැඩි විස්තර සඳහා හිමිකරු අමතන්න.",
+  featureDisabledNote: "මෙම විශේෂාංගය දැනට පරිපාලක විසින් අක්‍රීය කර ඇත.",
+  independentNotice:
+    "NEXO AI යනු Kushan A Wickramasinghe (Ash Wickramasinghe) විසින් නිර්මාණය කර සංවර්ධනය කරන ලද ස්වාධීන මෘදුකාංග වේදිකාවකි."
 };
 
 export const dictionaries: Record<Lang, Dict> = { en, si };

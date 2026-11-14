@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
+import { fetchConfig } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { dictionaries } from "@/lib/i18n";
-import type { Lang } from "@/lib/types";
+import type { Lang, PublicConfig } from "@/lib/types";
 import InstallButton from "./InstallButton";
 import JarvisCore from "./JarvisCore";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
@@ -13,6 +14,30 @@ function Gate() {
   const [lang, setLang] = useState<Lang>("en");
   const [signingIn, setSigningIn] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
+
+  useEffect(() => {
+    fetchConfig()
+      .then((cfg) => {
+        setPublicConfig(cfg);
+        if (cfg.defaultTheme) {
+          const resolved =
+            cfg.defaultTheme === "system"
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+              : cfg.defaultTheme;
+          if (!localStorage.getItem("nexo.prefs")) {
+            document.documentElement.dataset.theme = resolved;
+          }
+        }
+        if (cfg.allowLanguageSwitch === false && cfg.defaultLanguage) {
+          setLang(cfg.defaultLanguage);
+          document.documentElement.lang = cfg.defaultLanguage;
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     try {
@@ -27,8 +52,10 @@ function Gate() {
   }, []);
 
   const t = dictionaries[lang];
+  const allowLangSwitch = publicConfig?.allowLanguageSwitch !== false;
 
   const switchLang = (next: Lang) => {
+    if (!allowLangSwitch) return;
     setLang(next);
     document.documentElement.lang = next;
     try {
@@ -51,27 +78,41 @@ function Gate() {
     return <Workspace user={user} getToken={getToken} onLogout={logout} />;
   }
 
+  const appName = publicConfig?.appName || "NEXO AI";
+  const subtitle = publicConfig?.brandingSubtitle || t.tagline;
+
   return (
     <main className="nx-auth-shell">
       <div className="nx-auth-card">
         <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <InstallButton label={t.install} iosPrompt={t.installIos} closeLabel={t.close} compact />
-          <div className="nx-seg" style={{ marginLeft: "auto" }}>
-            <button type="button" className={lang === "en" ? "active" : ""} onClick={() => switchLang("en")}>
-              EN
-            </button>
-            <button type="button" className={lang === "si" ? "active" : ""} onClick={() => switchLang("si")}>
-              සිං
-            </button>
-          </div>
+          {allowLangSwitch && (
+            <div className="nx-seg" style={{ marginLeft: "auto" }}>
+              <button type="button" className={lang === "en" ? "active" : ""} onClick={() => switchLang("en")}>
+                EN
+              </button>
+              <button type="button" className={lang === "si" ? "active" : ""} onClick={() => switchLang("si")}>
+                සිං
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="nx-auth-orb">
           <JarvisCore />
         </div>
 
-        <h1 className="nx-auth-title">NEXO AI</h1>
-        <p className="nx-auth-sub">{t.tagline}</p>
+        <h1 className="nx-auth-title">{appName}</h1>
+        <p className="nx-auth-sub">{subtitle}</p>
+
+        {publicConfig?.maintenance?.enabled && (
+          <div className="nx-banner maintenance" style={{ width: "100%", textAlign: "left" }}>
+            <div className="nx-announcement-content">
+              <strong>{publicConfig.maintenance.title || t.maintenanceTitle}</strong>
+              <span>{publicConfig.maintenance.message}</span>
+            </div>
+          </div>
+        )}
 
         {!configured ? (
           <div className="nx-setup-box">
@@ -99,6 +140,11 @@ function Gate() {
             >
               <span>{signingIn ? t.signingIn : t.signIn}</span>
             </button>
+            {publicConfig?.allowRegistration === false && (
+              <p className="nx-auth-fine">
+                New account registrations are currently paused by the administrator. Existing accounts and the Owner may still sign in.
+              </p>
+            )}
             <p className="nx-auth-fine">{t.signInFine}</p>
           </>
         )}

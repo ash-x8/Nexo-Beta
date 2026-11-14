@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, PanelLeft, PanelRight, Settings, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { ChevronDown, LogOut, PanelLeft, PanelRight, Settings, ShieldCheck, X } from "lucide-react";
 import type { UserProfile } from "@/lib/auth";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
@@ -10,9 +11,11 @@ import type {
   Attachment,
   ChatMessage,
   Conversation,
+  FeatureKey,
   MemoryItem,
   ModelCatalogItem,
-  PublicConfig
+  PublicConfig,
+  SessionInfo
 } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import Composer from "../Composer";
@@ -29,6 +32,11 @@ interface Props {
   getToken: () => Promise<string>;
   onLogout: () => Promise<void>;
   config: PublicConfig | null;
+  session: SessionInfo | null;
+  features: Record<FeatureKey, boolean>;
+  announcements: PublicConfig["announcements"];
+  onDismissAnnouncement: (id: string) => void;
+  ownerMaintenanceBanner: ReactNode;
   modelsCatalog: ModelCatalogItem[];
   online: boolean;
   prefs: Prefs;
@@ -135,11 +143,16 @@ export default function DesktopApp(props: Props) {
   }, [messages.length, lastMessageContent]);
 
   const groups = promptsFor(prefs.ui);
+  const isAdmin = props.session?.role === "SUPER_ADMIN";
+  const { features } = props;
 
   return (
     <div className="nx-desk-shell">
       <DesktopSidebar
         t={t}
+        appName={config?.appName || "NEXO AI"}
+        isAdmin={isAdmin}
+        historyEnabled={features.conversationHistory}
         user={props.user}
         collapsed={prefs.sidebarCollapsed}
         convs={convs}
@@ -192,7 +205,7 @@ export default function DesktopApp(props: Props) {
 
             <InstallButton label={t.install} iosPrompt={t.installIos} closeLabel={t.close} compact />
 
-            {prefs.avatarOn && (
+            {features.jarvisMode && prefs.avatarOn && (
               <button
                 type="button"
                 className={`nx-icon-btn ${prefs.infoPanelOpen ? "active" : ""}`}
@@ -237,6 +250,17 @@ export default function DesktopApp(props: Props) {
                     <span className="nx-user-name">{props.user.displayName || "NEXO User"}</span>
                     <span className="nx-user-email">{props.user.email || props.user.uid}</span>
                   </div>
+                  {isAdmin && (
+                    <Link
+                      href="/admin"
+                      className="nx-profile-popover-item"
+                      style={{ color: "var(--accent-blue)", textDecoration: "none" }}
+                      onClick={() => setProfileMenuOpen(false)}
+                    >
+                      <ShieldCheck size={14} />
+                      <span>{t.adminCenter}</span>
+                    </Link>
+                  )}
                   <button
                     type="button"
                     className="nx-profile-popover-item"
@@ -269,6 +293,29 @@ export default function DesktopApp(props: Props) {
           <main className="nx-chat-col">
             <div ref={scrollRef} className="nx-desk-scroll" onScroll={onScroll}>
               <div className="nx-desk-inner">
+                {props.ownerMaintenanceBanner}
+
+                {props.announcements.length > 0 && (
+                  <div className="nx-announcement-stack">
+                    {props.announcements.map((a) => (
+                      <div key={a.id} className={`nx-banner ${a.priority === "critical" ? "critical" : a.category}`}>
+                        <div className="nx-announcement-content">
+                          <strong>{a.title}</strong>
+                          <span>{a.message}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="nx-banner-close"
+                          onClick={() => props.onDismissAnnouncement(a.id)}
+                          aria-label={t.close}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {!online && (
                   <div className="nx-banner offline">
                     <span>{t.offlineNote}</span>
@@ -344,6 +391,7 @@ export default function DesktopApp(props: Props) {
                       isBusy={busy}
                       isSpeakingThis={props.speaking && props.speakingMsgId === m.id}
                       isPaused={props.paused}
+                      ttsEnabled={features.tts}
                       canRegenerate={m.id === lastAssistantId}
                       onSpeak={props.onSpeakMsg}
                       onPause={props.onPauseSpeak}
@@ -364,11 +412,13 @@ export default function DesktopApp(props: Props) {
                 <Composer
                   t={t}
                   busy={busy}
-                  disabled={!online}
+                  disabled={!online || !features.chat}
+                  disabledNote={!features.chat ? t.featureDisabledNote : undefined}
                   isMobile={false}
-                  searchEnabled={Boolean(config?.searchEnabled)}
+                  searchEnabled={Boolean(config?.searchEnabled) && features.webSearch}
                   useSearch={props.useSearch}
                   onToggleSearch={() => props.setUseSearch(!props.useSearch)}
+                  attachmentsEnabled={features.attachments}
                   maxAttachmentMb={config?.maxAttachmentMb ?? 4}
                   allowPdf={config?.provider === "gemini"}
                   maxInputChars={config?.maxInputChars ?? 8000}
@@ -392,7 +442,7 @@ export default function DesktopApp(props: Props) {
             </div>
           </main>
 
-          {prefs.avatarOn && prefs.infoPanelOpen && (
+          {features.jarvisMode && prefs.avatarOn && prefs.infoPanelOpen && (
             <DesktopAssistantPanel
               t={t}
               state={orbState}
@@ -416,6 +466,8 @@ export default function DesktopApp(props: Props) {
         user={props.user}
         getToken={props.getToken}
         config={config}
+        session={props.session}
+        features={features}
         prefs={prefs}
         setPref={setPref}
         memory={props.memory}

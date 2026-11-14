@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
-import { Compass, MessageSquare, Plus, Settings, X } from "lucide-react";
+import Link from "next/link";
+import { Compass, MessageSquare, Plus, Settings, ShieldCheck, X } from "lucide-react";
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
 import type { Conversation, ModelCatalogItem } from "@/lib/types";
@@ -10,6 +11,9 @@ interface Props {
   open: boolean;
   onClose: () => void;
   t: Dict;
+  appName?: string;
+  isAdmin?: boolean;
+  historyEnabled?: boolean;
   user: UserProfile;
   convs: Conversation[];
   activeId: string | null;
@@ -27,6 +31,9 @@ export default function MobileDrawer({
   open,
   onClose,
   t,
+  appName = "NEXO AI",
+  isAdmin = false,
+  historyEnabled = true,
   user,
   convs,
   activeId,
@@ -54,7 +61,7 @@ export default function MobileDrawer({
     <div className="nx-mob-drawer-backdrop" role="dialog" aria-modal="true" aria-label={t.menu} onClick={onClose}>
       <nav className="nx-mob-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="nx-mob-drawer-head">
-          <span className="nx-mob-brand">NEXO AI</span>
+          <span className="nx-mob-brand">{appName}</span>
           <button type="button" className="nx-mob-topbar-btn" onClick={onClose} aria-label={t.close}>
             <X size={20} />
           </button>
@@ -72,6 +79,18 @@ export default function MobileDrawer({
             <Plus size={18} />
             <span>{t.newChat}</span>
           </button>
+
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="nx-mob-drawer-item"
+              style={{ color: "var(--accent-blue)", textDecoration: "none" }}
+              onClick={onClose}
+            >
+              <ShieldCheck size={18} />
+              <span>{t.adminCenter}</span>
+            </Link>
+          )}
 
           <button
             type="button"
@@ -114,7 +133,9 @@ export default function MobileDrawer({
 
         <div className="nx-mob-drawer-scroll">
           <span className="nx-group-label" style={{ margin: "4px 2px 6px" }}>{t.recentChats}</span>
-          {convs.length === 0 ? (
+          {!historyEnabled ? (
+            <p className="nx-field-hint" style={{ padding: "8px 4px" }}>{t.featureDisabledNote}</p>
+          ) : convs.length === 0 ? (
             <p className="nx-field-hint" style={{ padding: "8px 4px" }}>{t.noChats}</p>
           ) : (
             convs.slice(0, 15).map((c) => (

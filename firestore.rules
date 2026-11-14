@@ -6,10 +6,28 @@ service cloud.firestore {
     }
     function str(v, max) { return v is string && v.size() <= max; }
 
+    // Protected admin-controlled user fields cannot be forged or modified from client SDK
+    function noProtectedUserKeys() {
+      return !request.resource.data.keys().hasAny([
+        'role', 'status', 'suspended', 'suspendedReason', 'disabled', 'featureOverrides'
+      ]);
+    }
+    function protectedUserKeysUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'role', 'status', 'suspended', 'suspendedReason', 'disabled', 'featureOverrides'
+      ]);
+    }
+
     match /users/{uid} {
       allow read: if isOwner(uid);
-      allow create, update: if isOwner(uid)
-        && request.resource.data.keys().size() <= 12
+      allow create: if isOwner(uid)
+        && noProtectedUserKeys()
+        && request.resource.data.keys().size() <= 14
+        && (!('displayName' in request.resource.data) || str(request.resource.data.displayName, 120))
+        && (!('email' in request.resource.data) || str(request.resource.data.email, 200));
+      allow update: if isOwner(uid)
+        && protectedUserKeysUnchanged()
+        && request.resource.data.keys().size() <= 20
         && (!('displayName' in request.resource.data) || str(request.resource.data.displayName, 120))
         && (!('email' in request.resource.data) || str(request.resource.data.email, 200));
       allow delete: if isOwner(uid);
@@ -48,6 +66,19 @@ service cloud.firestore {
     match /users/{uid}/usage/{day} {
       allow read: if isOwner(uid);
       allow write: if false;
+    }
+
+    // Global runtime configuration & admin audit/security records are strictly server/Admin-SDK managed.
+    match /system/{document=**} {
+      allow read, write: if false;
+    }
+    match /admin/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

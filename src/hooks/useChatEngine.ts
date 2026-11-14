@@ -20,12 +20,13 @@ import {
   updateMessageContent,
   updateMessageStatus
 } from "@/lib/store";
-import type { Attachment, ChatMessage, Conversation, MemoryItem, PublicConfig, Source } from "@/lib/types";
+import type { Attachment, ChatMessage, Conversation, FeatureFlags, MemoryItem, PublicConfig, Source } from "@/lib/types";
 
 interface UseChatEngineOpts {
   uid: string;
   getToken: () => Promise<string>;
   config: PublicConfig | null;
+  features?: Partial<FeatureFlags>;
   prefs: Prefs;
   listening: boolean;
   speaking: boolean;
@@ -61,6 +62,7 @@ export function useChatEngine({
   uid,
   getToken,
   config,
+  features,
   prefs,
   listening,
   speaking,
@@ -216,7 +218,8 @@ export function useChatEngine({
       convId: string,
       historySnapshot: ChatMessage[],
       userMsgId: string,
-      useSearch: boolean
+      useSearch: boolean,
+      voiceTriggered = false
     ) => {
       const assistantMsg: ChatMessage = {
         id: uidGen(),
@@ -244,7 +247,8 @@ export function useChatEngine({
       try {
         const token = await getToken();
         const latestQuery = historySnapshot[historySnapshot.length - 1]?.content || "";
-        const selectedMem = prefs.memoryOn ? selectMemories(memory, latestQuery) : [];
+        const memoryAllowed = features?.personalMemory !== false;
+        const selectedMem = prefs.memoryOn && memoryAllowed ? selectMemories(memory, latestQuery) : [];
 
         const payloadMsgs = historySnapshot
           .slice(-(config?.maxHistoryMessages || 24))
@@ -263,6 +267,7 @@ export function useChatEngine({
           customInstructions: prefs.customInstructions.trim() || undefined,
           memory: selectedMem,
           useSearch,
+          voiceTriggered,
           model: prefs.model || undefined,
           signal: ac.signal
         })) {
@@ -350,15 +355,15 @@ export function useChatEngine({
         }
       }
 
-      if (finalStatus === "complete" && prefs.speak && text && activeIdRef.current === convId) {
+      if (finalStatus === "complete" && prefs.speak && features?.tts !== false && text && activeIdRef.current === convId) {
         speak(text);
       }
     },
-    [uid, getToken, config, prefs, memory, speak, t.fallbackNotice]
+    [uid, getToken, config, features?.personalMemory, features?.tts, prefs, memory, speak, t.fallbackNotice]
   );
 
   const sendMessage = useCallback(
-    async (text: string, files: Attachment[], useSearch: boolean) => {
+    async (text: string, files: Attachment[], useSearch: boolean, voiceTriggered = false) => {
       if (busy) return;
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         setError(t.offlineNote);
@@ -417,7 +422,7 @@ export function useChatEngine({
       }
 
       if (activeIdRef.current !== convId) return;
-      await runStream(convId, nextHistory, userMsg.id, useSearch);
+      await runStream(convId, nextHistory, userMsg.id, useSearch, voiceTriggered);
     },
     [busy, config, messages, stopSpeaking, t, uid, runStream]
   );

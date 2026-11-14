@@ -5,12 +5,13 @@ import "@/styles/tokens.css";
 import "@/styles/base.css";
 import "@/styles/mobile.css";
 import "@/styles/desktop.css";
+import "@/styles/admin.css";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-display", display: "swap" });
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
-const THEME_BOOT = `try{var p=JSON.parse(localStorage.getItem("nexo.prefs")||"{}");var t=p.theme||"dark";if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f6fb":"#06070a")}catch(e){document.documentElement.dataset.theme="dark"}`;
+const THEME_BOOT = `try{var p=JSON.parse(localStorage.getItem("nexo.prefs")||"{}");var t=p.theme||"dark";if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f7fa":"#080d13")}catch(e){document.documentElement.dataset.theme="dark"}`;
 
 export const metadata: Metadata = {
   title: "NEXO AI",
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#06070a",
+  themeColor: "#080d13",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover"

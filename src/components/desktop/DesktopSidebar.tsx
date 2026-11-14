@@ -1,12 +1,16 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Check, Pencil, Plus, Search, Settings, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { Check, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
 import type { Conversation } from "@/lib/types";
 
 interface Props {
   t: Dict;
+  appName?: string;
+  isAdmin?: boolean;
+  historyEnabled?: boolean;
   user: UserProfile;
   collapsed: boolean;
   convs: Conversation[];
@@ -22,6 +26,9 @@ interface Props {
 
 export default function DesktopSidebar({
   t,
+  appName = "NEXO AI",
+  isAdmin = false,
+  historyEnabled = true,
   user,
   collapsed,
   convs,
@@ -77,7 +84,7 @@ export default function DesktopSidebar({
   return (
     <aside className={`nx-sidebar ${collapsed ? "collapsed" : ""}`} aria-hidden={collapsed}>
       <div className="nx-sidebar-top">
-        <span className="nx-brand">NEXO AI</span>
+        <span className="nx-brand">{appName}</span>
         <button
           type="button"
           className="nx-secondary-btn"
@@ -89,6 +96,26 @@ export default function DesktopSidebar({
           <span>{t.newChat.split(" ")[0]}</span>
         </button>
       </div>
+
+      {isAdmin && (
+        <div style={{ padding: "0 14px 10px" }}>
+          <Link
+            href="/admin"
+            className="nx-secondary-btn"
+            style={{
+              width: "100%",
+              justifyContent: "flex-start",
+              minHeight: 36,
+              borderColor: "rgba(0, 214, 197, 0.3)",
+              color: "var(--accent-blue)",
+              textDecoration: "none"
+            }}
+          >
+            <ShieldCheck size={15} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.adminCenter}</span>
+          </Link>
+        </div>
+      )}
 
       <div className="nx-sidebar-search">
         <Search size={14} color="var(--text-muted)" />
@@ -102,7 +129,11 @@ export default function DesktopSidebar({
       </div>
 
       <div className="nx-sidebar-list">
-        {filtered.length === 0 ? (
+        {!historyEnabled ? (
+          <p style={{ padding: "18px 10px", fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+            {t.featureDisabledNote}
+          </p>
+        ) : filtered.length === 0 ? (
           <p style={{ padding: "18px 10px", fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
             {query.trim() ? t.noMatch : t.noChats}
           </p>

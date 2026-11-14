@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   ArrowLeft,
@@ -7,6 +8,7 @@ import {
   ChevronRight,
   Cpu,
   Info,
+  ShieldCheck,
   Sliders,
   User,
   Volume2
@@ -14,7 +16,7 @@ import {
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
 import type { Prefs } from "@/lib/prefs";
-import type { MemoryItem, PublicConfig } from "@/lib/types";
+import type { FeatureKey, MemoryItem, PublicConfig, SessionInfo } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import SettingsFields, { type SettingsSection } from "../SettingsFields";
 
@@ -23,6 +25,8 @@ interface Props {
   user: UserProfile;
   getToken: () => Promise<string>;
   config: PublicConfig | null;
+  session?: SessionInfo | null;
+  features?: Record<FeatureKey, boolean>;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   memory: MemoryItem[];
@@ -79,6 +83,30 @@ export default function MobileSettings(props: Props) {
           <span className="nx-user-email">{user.email || user.uid}</span>
         </div>
       </div>
+
+      {props.session?.role === "SUPER_ADMIN" && (
+        <Link
+          href="/admin"
+          className="nx-mob-row"
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid rgba(0, 214, 197, 0.3)",
+            borderRadius: "var(--radius-lg)",
+            marginBottom: 14,
+            textDecoration: "none"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ color: "var(--accent-blue)", display: "grid", placeItems: "center" }}>
+              <ShieldCheck size={18} />
+            </span>
+            <span className="nx-mob-row-title" style={{ color: "var(--accent-blue)" }}>
+              {t.adminCenter}
+            </span>
+          </div>
+          <ChevronRight size={18} color="var(--accent-blue)" />
+        </Link>
+      )}
 
       <div className="nx-mob-list">
         {items.map((item) => (

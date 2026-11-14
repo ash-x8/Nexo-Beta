@@ -1,6 +1,13 @@
-import { ApiError, requireUser } from "@/server/firebaseAdmin";
-import { acquireInflight, checkRate, consumeDaily, recordUsageMetric } from "@/server/limits";
-import { providerConfigured, readEnv } from "@/server/env";
+import { ApiError, requireAuthContext } from "@/server/firebaseAdmin";
+import { recordSecurityEvent } from "@/server/adminAudit";
+import {
+  acquireInflight,
+  checkRate,
+  consumeDaily,
+  recordGenerationTelemetry,
+  recordUsageMetric
+} from "@/server/limits";
+import { readEnv } from "@/server/env";
 import {
   getFreeFallbackCandidates,
   isFreeEligibleModel,
@@ -14,6 +21,7 @@ import {
   streamChat,
   type ProviderMessage
 } from "@/server/providers";
+import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
 import { webSearch } from "@/server/search";
 import { systemPrompt } from "@/server/prompt";
 import { ALLOWED_ATTACHMENT_MIME, ChatBodySchema } from "@/lib/schemas";
@@ -31,15 +39,41 @@ function jsonError(e: unknown) {
 export async function POST(req: Request) {
   let release: (() => void) | undefined;
   try {
-    if (!providerConfigured()) {
+    const ctx = await requireAuthContext(req);
+    const uid = ctx.uid;
+    const e = readEnv();
+    const runtimeCfg = await getRuntimeConfig();
+    const g = runtimeCfg.globalConfig;
+    const effectiveFeatures = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
+
+    if (runtimeCfg.maintenance.enabled && !ctx.isOwner) {
+      throw new ApiError(
+        503,
+        "maintenance",
+        runtimeCfg.maintenance.message || "NEXO AI is currently undergoing scheduled maintenance."
+      );
+    }
+
+    if (!effectiveFeatures.chat) {
+      throw new ApiError(403, "feature_disabled", "AI chat is currently disabled by the administrator.");
+    }
+
+    const activeProviderId = g.defaultProvider || e.provider;
+    const provEntry = runtimeCfg.providerConfig.providers[activeProviderId as keyof typeof runtimeCfg.providerConfig.providers];
+    if (provEntry && provEntry.enabled === false) {
+      throw new ApiError(503, "provider_disabled", "The active AI provider is currently disabled by the administrator.");
+    }
+
+    const hasCreds =
+      activeProviderId === "gemini"
+        ? !!(e.geminiKey && (g.defaultModel || provEntry?.defaultModel || e.geminiModel))
+        : !!(e.compatBase && e.compatKey && (g.defaultModel || provEntry?.defaultModel || e.compatModel));
+    if (!hasCreds) {
       throw new ApiError(503, "server_config", "The AI provider is not configured on the server yet.");
     }
-    const uid = await requireUser(req);
-    const e = readEnv();
 
-    // Reject oversized bodies before parsing them (base64 inflates attachments by ~4/3).
     const declared = Number(req.headers.get("content-length") || 0);
-    if (declared > (e.maxAttachmentMb * 1.45 + 1.5) * 1024 * 1024) {
+    if (declared > (g.maxAttachmentMb * 1.45 + 1.5) * 1024 * 1024) {
       throw new ApiError(413, "too_large", "The request is too large.");
     }
 
@@ -49,7 +83,7 @@ export async function POST(req: Request) {
     }
     const body = parsed.data;
 
-    const history = body.messages.slice(-e.maxHistory);
+    const history = body.messages.slice(-g.maxHistoryMessages);
     const last = history[history.length - 1];
     if (!last || last.role !== "user") {
       throw new ApiError(400, "bad_request", "The last message must be from the user.");
@@ -57,14 +91,16 @@ export async function POST(req: Request) {
     if (!last.content.trim() && !(last.attachments && last.attachments.length > 0)) {
       throw new ApiError(400, "bad_request", "Message cannot be empty.");
     }
-    if (last.content.length > e.maxInputChars) {
-      throw new ApiError(413, "too_long", `Message is too long (max ${e.maxInputChars} characters).`);
+    if (last.content.length > g.maxInputChars) {
+      throw new ApiError(413, "too_long", `Message is too long (max ${g.maxInputChars} characters).`);
     }
 
-    const provider = activeProvider();
+    const provider = activeProvider(activeProviderId);
     let attachmentBytes = 0;
+    let hasAttachments = false;
     for (const m of history) {
       for (const a of m.attachments || []) {
+        hasAttachments = true;
         if (!ALLOWED_ATTACHMENT_MIME.test(a.mime)) {
           throw new ApiError(415, "bad_file", `Unsupported file type: ${a.mime}`);
         }
@@ -78,22 +114,41 @@ export async function POST(req: Request) {
         }
       }
     }
-    if (attachmentBytes > e.maxAttachmentMb * 1024 * 1024) {
-      throw new ApiError(413, "too_large", `Attachments exceed ${e.maxAttachmentMb} MB.`);
+    if (hasAttachments && !effectiveFeatures.attachments) {
+      throw new ApiError(403, "feature_disabled", "File and image attachments are disabled by the administrator.");
+    }
+    if (attachmentBytes > g.maxAttachmentMb * 1024 * 1024) {
+      throw new ApiError(413, "too_large", `Attachments exceed ${g.maxAttachmentMb} MB.`);
+    }
+
+    if (body.useSearch && !effectiveFeatures.webSearch) {
+      throw new ApiError(403, "feature_disabled", "Web search is currently disabled by the administrator.");
     }
 
     try {
-      checkRate(uid, "chat");
+      checkRate(uid, "chat", Date.now(), g.rateLimitPerMinute);
     } catch (rateErr) {
       await recordUsageMetric(uid, "rateLimitHits");
+      await recordSecurityEvent({
+        type: "rate_limit",
+        uid,
+        path: "/api/chat",
+        severity: "low",
+        reason: (rateErr as Error).message
+      });
       throw rateErr;
     }
 
-    const defaultModel = provider.defaultModel();
+    const defaultModel = g.defaultModel || provEntry?.defaultModel || provider.defaultModel();
     let reportedModels: string[] = [];
     const selectedModel = body.model || defaultModel;
+    const modelOverride = runtimeCfg.modelRegistry.models[selectedModel];
 
-    if (e.freeOnly && !isFreeEligibleModel(selectedModel, provider.id, defaultModel)) {
+    if (modelOverride?.enabled === false) {
+      throw new ApiError(403, "model_disabled", "This AI model has been disabled by the administrator.");
+    }
+
+    if (g.freeOnlyMode && !isFreeEligibleModel(selectedModel, provider.id, defaultModel)) {
       throw new ApiError(
         403,
         "paid_model_blocked",
@@ -105,7 +160,7 @@ export async function POST(req: Request) {
       const vc = new AbortController();
       const vt = setTimeout(() => vc.abort(), 8000);
       try {
-        reportedModels = await availableModels(vc.signal);
+        reportedModels = await availableModels(vc.signal, provider.id);
         if (reportedModels.length > 0 && !reportedModels.includes(body.model) && !isFreeEligibleModel(body.model, provider.id, defaultModel)) {
           throw new ApiError(400, "bad_model", "That model is not available. Choose another free model.");
         }
@@ -119,7 +174,7 @@ export async function POST(req: Request) {
 
     release = acquireInflight(uid);
     try {
-      await consumeDaily(uid, "requests");
+      await consumeDaily(uid, "requests", g.dailyRequestLimit);
     } catch (quotaErr) {
       if (quotaErr instanceof ApiError && quotaErr.status === 429) {
         await recordUsageMetric(uid, "rateLimitHits");
@@ -137,11 +192,17 @@ export async function POST(req: Request) {
     const done = release;
     release = undefined;
 
+    const effectiveMemory = effectiveFeatures.personalMemory ? body.memory : [];
+    const inputCharsTotal = history.reduce((acc, m) => acc + (m.content?.length || 0), 0);
+
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
+        let outputChars = 0;
+        let usedModel = selectedModel;
+        let failed = false;
         try {
           let searchContext: string | undefined;
-          if (body.useSearch && last.content.trim()) {
+          if (body.useSearch && effectiveFeatures.webSearch && last.content.trim()) {
             const r = await webSearch(last.content, ac.signal);
             if (r) {
               searchContext = r.context;
@@ -154,8 +215,9 @@ export async function POST(req: Request) {
             responseStyle: body.responseStyle,
             nickname: body.nickname,
             customInstructions: body.customInstructions,
-            memory: body.memory,
-            searchContext
+            memory: effectiveMemory,
+            searchContext,
+            appName: g.appName
           });
 
           const msgs: ProviderMessage[] = history.map((m) => ({
@@ -168,7 +230,9 @@ export async function POST(req: Request) {
             provider.id,
             selectedModel,
             reportedModels,
-            defaultModel
+            defaultModel,
+            runtimeCfg.providerConfig.fallbackOrder,
+            runtimeCfg.modelRegistry.models
           );
           const attemptQueue = [selectedModel, ...fallbackCandidates];
 
@@ -177,7 +241,10 @@ export async function POST(req: Request) {
 
           for (let idx = 0; idx < attemptQueue.length; idx++) {
             const candidate = attemptQueue[idx];
-            if (e.freeOnly && !isFreeEligibleModel(candidate, provider.id, defaultModel)) {
+            if (runtimeCfg.modelRegistry.models[candidate]?.enabled === false) {
+              continue;
+            }
+            if (g.freeOnlyMode && !isFreeEligibleModel(candidate, provider.id, defaultModel)) {
               continue;
             }
 
@@ -195,6 +262,7 @@ export async function POST(req: Request) {
               await recordUsageMetric(uid, "fallbackCount");
             }
 
+            usedModel = candidate;
             controller.enqueue(
               line({
                 meta: {
@@ -207,10 +275,11 @@ export async function POST(req: Request) {
 
             let chunkProduced = false;
             try {
-              for await (const t of streamChat(system, msgs, ac.signal, candidate)) {
+              for await (const t of streamChat(system, msgs, ac.signal, candidate, provider.id, g.aiTemperature)) {
                 if (t) {
                   chunkProduced = true;
                   produced = true;
+                  outputChars += t.length;
                   controller.enqueue(line({ t }));
                 }
               }
@@ -241,6 +310,7 @@ export async function POST(req: Request) {
           }
 
           if (!produced) {
+            failed = true;
             controller.enqueue(
               line({ error: { code: "empty", message: "The model returned an empty answer. Try rephrasing." } })
             );
@@ -248,8 +318,9 @@ export async function POST(req: Request) {
             controller.enqueue(line({ done: true }));
           }
         } catch (err) {
+          failed = true;
           if (req.signal.aborted) {
-            // User cancelled the generation intentionally
+            // User cancelled intentionally
           } else if (err instanceof ProviderError) {
             controller.enqueue(line({ error: { code: err.code, message: err.message } }));
           } else if (ac.signal.aborted) {
@@ -262,6 +333,14 @@ export async function POST(req: Request) {
           clearTimeout(timer);
           req.signal.removeEventListener("abort", onAbort);
           done();
+          await recordGenerationTelemetry(uid, {
+            provider: provider.id,
+            model: usedModel,
+            inputChars: inputCharsTotal,
+            outputChars,
+            voiceTriggered: Boolean(body.voiceTriggered),
+            failed
+          });
           try {
             controller.close();
           } catch {

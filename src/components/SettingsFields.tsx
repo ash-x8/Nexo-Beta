@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Check, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Check, ExternalLink, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { fetchModels, fetchUsage } from "@/lib/api";
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
@@ -8,7 +9,7 @@ import { firebaseMessage } from "@/lib/errors";
 import { looksSensitive, MEMORY_LIMIT } from "@/lib/memory";
 import type { Prefs, ResponseStyle, Theme } from "@/lib/prefs";
 import { addMemory, deleteMemory, updateMemory } from "@/lib/store";
-import type { MemoryItem, ModelCatalogItem, PublicConfig, UsageInfo } from "@/lib/types";
+import type { FeatureKey, MemoryItem, ModelCatalogItem, PublicConfig, SessionInfo, UsageInfo } from "@/lib/types";
 import { useInstall } from "@/lib/useInstall";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import InstallButton from "./InstallButton";
@@ -22,6 +23,8 @@ interface Props {
   user: UserProfile;
   getToken: () => Promise<string>;
   config: PublicConfig | null;
+  session?: SessionInfo | null;
+  features?: Record<FeatureKey, boolean>;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   memory: MemoryItem[];
@@ -35,6 +38,8 @@ export default function SettingsFields({
   user,
   getToken,
   config,
+  session,
+  features,
   prefs,
   setPref,
   memory,
@@ -129,20 +134,32 @@ export default function SettingsFields({
   };
 
   if (section === "general") {
+    const langLocked = config?.allowLanguageSwitch === false;
     return (
       <div className="nx-mob-settings-group">
         <div className="nx-field-card">
           <div className="nx-field-row">
             <span className="nx-field-label">{t.uiLang}</span>
             <div className="nx-seg">
-              <button type="button" className={prefs.ui === "en" ? "active" : ""} onClick={() => setPref("ui", "en")}>
+              <button
+                type="button"
+                disabled={langLocked}
+                className={prefs.ui === "en" ? "active" : ""}
+                onClick={() => setPref("ui", "en")}
+              >
                 English
               </button>
-              <button type="button" className={prefs.ui === "si" ? "active" : ""} onClick={() => setPref("ui", "si")}>
+              <button
+                type="button"
+                disabled={langLocked}
+                className={prefs.ui === "si" ? "active" : ""}
+                onClick={() => setPref("ui", "si")}
+              >
                 සිංහල
               </button>
             </div>
           </div>
+          {langLocked && <p className="nx-field-hint">{t.featureDisabledNote}</p>}
         </div>
 
         <div className="nx-field-card">
@@ -158,20 +175,22 @@ export default function SettingsFields({
           </div>
         </div>
 
-        <div className="nx-field-card">
-          <div className="nx-field-row">
-            <span className="nx-field-label">{t.showAvatar}</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={prefs.avatarOn}
-              className={`nx-switch ${prefs.avatarOn ? "on" : ""}`}
-              onClick={() => setPref("avatarOn", !prefs.avatarOn)}
-            >
-              <span />
-            </button>
+        {features?.jarvisMode !== false && (
+          <div className="nx-field-card">
+            <div className="nx-field-row">
+              <span className="nx-field-label">{t.showAvatar}</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={prefs.avatarOn}
+                className={`nx-switch ${prefs.avatarOn ? "on" : ""}`}
+                onClick={() => setPref("avatarOn", !prefs.avatarOn)}
+              >
+                <span />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -238,8 +257,14 @@ export default function SettingsFields({
   }
 
   if (section === "voice") {
+    const ttsAllowed = features?.tts !== false;
     return (
       <div className="nx-mob-settings-group">
+        {!ttsAllowed && (
+          <div className="nx-banner warning">
+            <span>{t.featureDisabledNote}</span>
+          </div>
+        )}
         <div className="nx-field-card">
           <div className="nx-field-row">
             <span className="nx-field-label">{t.voiceLang}</span>
@@ -260,8 +285,9 @@ export default function SettingsFields({
             <button
               type="button"
               role="switch"
-              aria-checked={prefs.speak}
-              className={`nx-switch ${prefs.speak ? "on" : ""}`}
+              disabled={!ttsAllowed}
+              aria-checked={ttsAllowed && prefs.speak}
+              className={`nx-switch ${ttsAllowed && prefs.speak ? "on" : ""}`}
               onClick={() => setPref("speak", !prefs.speak)}
             >
               <span />
@@ -273,6 +299,7 @@ export default function SettingsFields({
           <span className="nx-field-label">{t.browserVoice}</span>
           <select
             className="nx-select"
+            disabled={!ttsAllowed}
             value={prefs.voiceName}
             onChange={(e) => setPref("voiceName", e.target.value)}
             aria-label={t.browserVoice}
@@ -296,6 +323,15 @@ export default function SettingsFields({
   }
 
   if (section === "memory") {
+    if (features?.personalMemory === false) {
+      return (
+        <div className="nx-mob-settings-group">
+          <div className="nx-banner warning">
+            <span>{t.featureDisabledNote}</span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="nx-mob-settings-group">
         <div className="nx-field-card">
@@ -486,6 +522,16 @@ export default function SettingsFields({
           </div>
         </div>
 
+        {session?.role === "SUPER_ADMIN" && (
+          <div className="nx-field-card">
+            <span className="nx-field-label">{t.adminCenter}</span>
+            <Link href="/admin" className="nx-primary-btn" style={{ minHeight: 40, textDecoration: "none" }}>
+              <ShieldCheck size={16} />
+              <span>{t.adminCenter}</span>
+            </Link>
+          </div>
+        )}
+
         <div className="nx-field-card">
           <span className="nx-field-label">{t.installSection}</span>
           {standalone ? (
@@ -505,9 +551,9 @@ export default function SettingsFields({
     );
   }
 
-  // About, Developer Identity & Legal Attribution
+  // About & Credits: Official NEXO AI ownership and conditional active-provider attribution
   const dev = config?.developer || {
-    projectName: "NEXO AI",
+    projectName: config?.appName || "NEXO AI",
     creatorName: "Ash Wickramasinghe",
     fullName: "Kushan A Wickramasinghe",
     role: "Founder, Creator & Independent Developer",
@@ -524,7 +570,7 @@ export default function SettingsFields({
   const thirdPartyItems: string[] = [];
   if (activeProviders.includes("gemini")) thirdPartyItems.push("Google Gemini API (AI inference & speech synthesis)");
   if (activeProviders.includes("openai-compatible")) thirdPartyItems.push("Configured OpenAI-Compatible API provider");
-  if (config?.authConfigured) thirdPartyItems.push("Google Firebase Authentication & Cloud Firestore");
+  if (config?.authConfigured) thirdPartyItems.push("Firebase Authentication & Cloud Firestore");
   if (config?.searchEnabled) thirdPartyItems.push("Tavily Web Search API");
 
   return (
@@ -532,7 +578,7 @@ export default function SettingsFields({
       <div className="nx-field-card">
         <span className="nx-field-label">{t.developerSectionTitle}</span>
         <p className="nx-field-hint" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-          {dev.projectName} · {dev.creatorName} ({dev.fullName})
+          {config?.appName || dev.projectName} · {dev.creatorName} ({dev.fullName})
         </p>
         <p className="nx-field-hint">
           {dev.role} · {t.aboutBody}
@@ -550,9 +596,7 @@ export default function SettingsFields({
 
       <div className="nx-field-card">
         <span className="nx-field-label">{t.aiTechTitle}</span>
-        <p className="nx-field-hint">
-          {dev.projectName} is an independent platform engineered by {dev.creatorName}. Model responses are powered via secure server-side API integration with configured free-tier AI models ({config?.model || "gemini-2.5-flash"}).
-        </p>
+        <p className="nx-field-hint">{t.independentNotice}</p>
       </div>
 
       <div className="nx-field-card">
@@ -560,7 +604,7 @@ export default function SettingsFields({
         <p className="nx-field-hint">
           {thirdPartyItems.length > 0
             ? thirdPartyItems.join(" · ")
-            : "Third-party AI and persistence providers are enabled only when configured on the server."}
+            : "Third-party AI and persistence providers are active only when configured on the server."}
         </p>
       </div>
 
