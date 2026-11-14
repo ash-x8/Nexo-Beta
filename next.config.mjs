@@ -14,6 +14,7 @@ const csp = [
 ].join("; ");
 
 const nextConfig = {
+  output: "standalone",
   reactStrictMode: true,
   transpilePackages: ["three"],
   experimental: { serverComponentsExternalPackages: ["firebase-admin"] },
