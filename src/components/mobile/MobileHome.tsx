@@ -1,8 +1,10 @@
 "use client";
-import { Compass, MessageSquarePlus, Mic } from "lucide-react";
+import { Compass, Menu, MessageSquarePlus, Mic } from "lucide-react";
+import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 import { promptsFor } from "@/lib/prompts";
 import type { Conversation, Lang } from "@/lib/types";
+import AudioWaveform from "../AudioWaveform";
 import JarvisCore from "../JarvisCore";
 
 interface Props {
@@ -10,10 +12,12 @@ interface Props {
   lang: Lang;
   nickname: string;
   avatarOn: boolean;
+  assistantState: AvatarState;
   online: boolean;
   serverConfigured: boolean;
   convs: Conversation[];
   micSupported: boolean;
+  onOpenMenu: () => void;
   onNewChat: () => void;
   onStartVoice: () => void;
   onOpenExplore: () => void;
@@ -34,10 +38,12 @@ export default function MobileHome({
   lang,
   nickname,
   avatarOn,
+  assistantState,
   online,
   serverConfigured,
   convs,
   micSupported,
+  onOpenMenu,
   onNewChat,
   onStartVoice,
   onOpenExplore,
@@ -52,7 +58,12 @@ export default function MobileHome({
   return (
     <div className="nx-mob-scroll">
       <div className="nx-mob-head-row">
-        <span className="nx-mob-brand">NEXO AI</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button type="button" className="nx-mob-topbar-btn" onClick={onOpenMenu} aria-label={t.menu}>
+            <Menu size={20} />
+          </button>
+          <span className="nx-mob-brand">NEXO AI</span>
+        </div>
         <div className="nx-mob-meta-line">
           <span className={`nx-live-dot ${!online ? "offline" : ""}`} aria-hidden="true" />
           <span>{!online ? t.offlineShort : serverConfigured ? t.available : t.unavailable}</span>
@@ -61,9 +72,14 @@ export default function MobileHome({
 
       <section className="nx-mob-hero">
         {avatarOn && (
-          <div className="nx-mob-orb">
-            <JarvisCore />
-          </div>
+          <>
+            <div className="nx-mob-orb">
+              <JarvisCore state={assistantState} />
+            </div>
+            <div style={{ width: 160 }}>
+              <AudioWaveform height={22} bars={20} />
+            </div>
+          </>
         )}
         <h1>{greet}</h1>
         <p>{t.helloSub}</p>

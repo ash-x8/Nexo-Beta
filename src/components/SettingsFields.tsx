@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Check, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
 import { fetchModels, fetchUsage } from "@/lib/api";
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
@@ -8,10 +8,11 @@ import { firebaseMessage } from "@/lib/errors";
 import { looksSensitive, MEMORY_LIMIT } from "@/lib/memory";
 import type { Prefs, ResponseStyle, Theme } from "@/lib/prefs";
 import { addMemory, deleteMemory, updateMemory } from "@/lib/store";
-import type { MemoryItem, PublicConfig, UsageInfo } from "@/lib/types";
+import type { MemoryItem, ModelCatalogItem, PublicConfig, UsageInfo } from "@/lib/types";
 import { useInstall } from "@/lib/useInstall";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import InstallButton from "./InstallButton";
+import ModelSelector from "./ModelSelector";
 
 export type SettingsSection = "general" | "ai" | "voice" | "memory" | "usage" | "account" | "about";
 
@@ -40,7 +41,7 @@ export default function SettingsFields({
   micPermission,
   onLogout
 }: Props) {
-  const [models, setModels] = useState<string[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogItem[]>([]);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [usageErr, setUsageErr] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export default function SettingsFields({
     getToken()
       .then((tok) => fetchModels(tok))
       .then((r) => {
-        if (active && r.models.length) setModels(r.models);
+        if (active && r.catalog.length) setCatalog(r.catalog);
       })
       .catch(() => {});
     return () => {
@@ -200,25 +201,17 @@ export default function SettingsFields({
           </div>
         </div>
 
-        <div className="nx-field-card">
-          <span className="nx-field-label">{t.modelLabel}</span>
-          <select
-            className="nx-select"
-            value={prefs.model}
-            onChange={(e) => setPref("model", e.target.value)}
-            aria-label={t.modelLabel}
-          >
-            <option value="">
-              {t.modelDefault} ({config?.model || "default"})
-            </option>
-            {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <p className="nx-field-hint">{t.modelHint}</p>
-        </div>
+        <ModelSelector
+          t={t}
+          selectedModel={prefs.model}
+          defaultModel={config?.model || "gemini-2.5-flash"}
+          catalog={catalog}
+          onSelect={(modelId) => setPref("model", modelId)}
+        />
+
+        {config?.freeOnly !== false && (
+          <p className="nx-field-hint" style={{ paddingLeft: 2 }}>{t.freeModeDesc}</p>
+        )}
 
         <div className="nx-field-card">
           <span className="nx-field-label">{t.nicknameLabel}</span>
@@ -411,6 +404,14 @@ export default function SettingsFields({
     const reqLimit = usage?.dailyLimit ?? config?.dailyLimit ?? 100;
     const ttsUsed = usage?.tts ?? 0;
     const ttsLimit = usage?.dailyTtsLimit ?? config?.dailyTtsLimit ?? 40;
+    const rateHits = usage?.rateLimitHits ?? 0;
+    const fallbackCount = usage?.fallbackCount ?? 0;
+    const healthLabel =
+      usage?.providerHealth === "degraded"
+        ? t.healthDegraded
+        : usage?.providerHealth === "unconfigured"
+          ? t.unavailable
+          : t.healthHealthy;
 
     return (
       <div className="nx-mob-settings-group">
@@ -443,11 +444,26 @@ export default function SettingsFields({
           </div>
         </div>
 
-        {usage?.day && (
-          <p className="nx-field-hint tabular">
-            UTC: {usage.day} · {config?.perMinute ?? 10}/min · {config?.maxInputChars ?? 8000} chars/msg
-          </p>
-        )}
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.providerHealthLabel}</span>
+            <span style={{ fontSize: 13, color: usage?.providerHealth === "degraded" ? "var(--status-warn)" : "var(--status-ok)", fontWeight: 500 }}>
+              {healthLabel}
+            </span>
+          </div>
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.rateLimitErrors}</span>
+            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>{rateHits}</span>
+          </div>
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.fallbackSwitches}</span>
+            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>{fallbackCount}</span>
+          </div>
+        </div>
+
+        <p className="nx-field-hint tabular">
+          {t.quotaNote} {usage?.day ? `(${usage.day} · ${config?.perMinute ?? 10}/min · ${config?.maxInputChars ?? 8000} chars/msg)` : ""}
+        </p>
       </div>
     );
   }
@@ -489,19 +505,78 @@ export default function SettingsFields({
     );
   }
 
+  // About, Developer Identity & Legal Attribution
+  const dev = config?.developer || {
+    projectName: "NEXO AI",
+    creatorName: "Ash Wickramasinghe",
+    fullName: "Kushan A Wickramasinghe",
+    role: "Founder, Creator & Independent Developer",
+    website: "https://ash-wickramasinghe.site",
+    copyright: "© 2026 Ash Wickramasinghe. All Rights Reserved."
+  };
+
+  const activeProviders = config?.configuredProviders?.length
+    ? config.configuredProviders
+    : config?.provider
+      ? [config.provider]
+      : [];
+
+  const thirdPartyItems: string[] = [];
+  if (activeProviders.includes("gemini")) thirdPartyItems.push("Google Gemini API (AI inference & speech synthesis)");
+  if (activeProviders.includes("openai-compatible")) thirdPartyItems.push("Configured OpenAI-Compatible API provider");
+  if (config?.authConfigured) thirdPartyItems.push("Google Firebase Authentication & Cloud Firestore");
+  if (config?.searchEnabled) thirdPartyItems.push("Tavily Web Search API");
+
   return (
     <div className="nx-mob-settings-group">
       <div className="nx-field-card">
-        <span className="nx-field-label">{t.about}</span>
-        <p className="nx-field-hint">{t.aboutBody}</p>
+        <span className="nx-field-label">{t.developerSectionTitle}</span>
+        <p className="nx-field-hint" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+          {dev.projectName} · {dev.creatorName} ({dev.fullName})
+        </p>
+        <p className="nx-field-hint">
+          {dev.role} · {t.aboutBody}
+        </p>
+        <a
+          href={dev.website}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}
+        >
+          <span>{dev.website}</span>
+          <ExternalLink size={12} />
+        </a>
       </div>
+
+      <div className="nx-field-card">
+        <span className="nx-field-label">{t.aiTechTitle}</span>
+        <p className="nx-field-hint">
+          {dev.projectName} is an independent platform engineered by {dev.creatorName}. Model responses are powered via secure server-side API integration with configured free-tier AI models ({config?.model || "gemini-2.5-flash"}).
+        </p>
+      </div>
+
+      <div className="nx-field-card">
+        <span className="nx-field-label">{t.thirdPartyTitle}</span>
+        <p className="nx-field-hint">
+          {thirdPartyItems.length > 0
+            ? thirdPartyItems.join(" · ")
+            : "Third-party AI and persistence providers are enabled only when configured on the server."}
+        </p>
+      </div>
+
       <div className="nx-field-card">
         <span className="nx-field-label">{t.privacyTitle}</span>
         <p className="nx-field-hint">{t.privacyBody}</p>
       </div>
+
       <div className="nx-field-card">
-        <span className="nx-field-label">{t.termsTitle}</span>
-        <p className="nx-field-hint">{t.termsBody}</p>
+        <span className="nx-field-label">{t.disclaimerTitle}</span>
+        <p className="nx-field-hint">{t.aiDisclaimerBody}</p>
+      </div>
+
+      <div className="nx-field-card">
+        <span className="nx-field-label">{t.ipTitle}</span>
+        <p className="nx-field-hint">{dev.copyright}</p>
       </div>
     </div>
   );

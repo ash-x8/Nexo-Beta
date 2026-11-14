@@ -14,14 +14,16 @@ const PALETTE: Record<AvatarState, number> = {
   idle: 0x4aa8ff,
   listening: 0x8a6bff,
   thinking: 0xb58cff,
-  speaking: 0x3df0d0
+  speaking: 0x3df0d0,
+  error: 0xef4444
 };
 
 interface Props {
   onFail?: () => void;
+  state?: AvatarState;
 }
 
-export default function JarvisCore({ onFail }: Props) {
+export default function JarvisCore({ onFail, state = "idle" }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onFailRef = useRef(onFail);
   onFailRef.current = onFail;
@@ -82,14 +84,12 @@ export default function JarvisCore({ onFail }: Props) {
 
     const additive = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false } as const;
 
-    // Wireframe lattice
     const lattice = new THREE.Mesh(
       new THREE.IcosahedronGeometry(1.25, 1),
       new THREE.MeshBasicMaterial({ color, wireframe: true, opacity: 0.55, ...additive })
     );
     group.add(lattice);
 
-    // Inner glow core
     const core = new THREE.Mesh(
       new THREE.SphereGeometry(0.62, 32, 32),
       new THREE.MeshBasicMaterial({ color, opacity: 0.85, ...additive })
@@ -102,7 +102,6 @@ export default function JarvisCore({ onFail }: Props) {
     );
     group.add(halo);
 
-    // Orbital rings
     const rings = [1.75, 2.05, 2.4].map((r, i) => {
       const m = new THREE.Mesh(
         new THREE.TorusGeometry(r, 0.012 + i * 0.004, 8, 160),
@@ -113,7 +112,6 @@ export default function JarvisCore({ onFail }: Props) {
       return m;
     });
 
-    // Particle shell
     const N = 520;
     const pos = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
@@ -166,15 +164,23 @@ export default function JarvisCore({ onFail }: Props) {
       const s = avatarBus.state;
       const level = avatarBus.level;
 
-      target.setHex(PALETTE[s]);
+      target.setHex(PALETTE[s] || PALETTE.idle);
       color.lerp(target, Math.min(1, dt * 4));
       materials.forEach((m) => (m as THREE.MeshBasicMaterial).color.copy(color));
 
-      const wantSpeed = s === "thinking" ? 3.2 : s === "listening" ? 1.4 : s === "speaking" ? 1.8 : 0.7;
+      const wantSpeed =
+        s === "thinking" ? 3.2 : s === "listening" ? 1.4 : s === "speaking" ? 1.8 : s === "error" ? 0.3 : 0.7;
       speed += (wantSpeed - speed) * Math.min(1, dt * 3);
       const motion = reduce ? 0.15 : 1;
 
-      const wantPulse = s === "speaking" ? level : s === "listening" ? 0.25 + 0.2 * Math.sin(t * 3) : 0.08 * Math.sin(t * 1.5);
+      const wantPulse =
+        s === "speaking"
+          ? level
+          : s === "listening"
+            ? 0.25 + 0.2 * Math.sin(t * 3)
+            : s === "error"
+              ? 0.18 + 0.1 * Math.sin(t * 6)
+              : 0.08 * Math.sin(t * 1.5);
       pulse += (wantPulse - pulse) * Math.min(1, dt * 12);
 
       lattice.rotation.y += dt * 0.35 * speed * motion;
@@ -236,7 +242,7 @@ export default function JarvisCore({ onFail }: Props) {
 
   if (useFallback) {
     return (
-      <div className="core-fallback" aria-hidden="true">
+      <div className={`core-fallback state-${state}`} aria-hidden="true">
         <span />
         <span />
         <span />

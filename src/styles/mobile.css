@@ -497,3 +497,121 @@
   color: var(--text-muted);
   margin: 14px 4px 6px;
 }
+
+.nx-mob-wave-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.nx-mob-wave-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.nx-mob-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(4px);
+  display: flex;
+}
+
+.nx-mob-drawer {
+  width: min(82vw, 312px);
+  height: 100%;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-hairline);
+  padding: calc(12px + var(--safe-top)) 12px calc(14px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nx-mob-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.nx-mob-drawer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nx-mob-drawer-item {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.nx-mob-drawer-item.primary {
+  background: var(--accent-soft);
+  color: var(--accent-blue);
+}
+
+.nx-mob-drawer-item:active {
+  background: var(--bg-hover);
+}
+
+.nx-mob-drawer-section {
+  padding: 8px 4px;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.nx-mob-drawer-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nx-mob-drawer-conv {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.nx-mob-drawer-conv span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nx-mob-drawer-conv.active {
+  background: var(--bg-active);
+  color: var(--accent-blue);
+  font-weight: 500;
+}
+
+.nx-mob-drawer-foot {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

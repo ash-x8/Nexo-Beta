@@ -4,15 +4,28 @@ function positiveInt(name: string, fallback: number): number {
 }
 
 export function readEnv() {
+  const rawCompatKey = (process.env.OPENAI_COMPAT_API_KEY || "").trim();
+  const rawCompatBase = (process.env.OPENAI_COMPAT_BASE_URL || "").trim().replace(/\/+$/, "");
+  const rawCompatModel = (process.env.OPENAI_COMPAT_MODEL || "").trim();
+
+  const openRouterKey = (process.env.OPENROUTER_API_KEY || "").trim();
+  const openAiKey = (process.env.OPENAI_API_KEY || "").trim();
+
+  const compatKey = rawCompatKey || openRouterKey || openAiKey;
+  const compatBase =
+    rawCompatBase ||
+    (openRouterKey && !rawCompatKey ? "https://openrouter.ai/api/v1" : openAiKey && !rawCompatKey ? "https://api.openai.com/v1" : "");
+
   return {
     provider: (process.env.AI_PROVIDER || "gemini").trim().toLowerCase(),
+    freeOnly: (process.env.FREE_ONLY_MODE || "true").trim().toLowerCase() !== "false",
     geminiKey: (process.env.GEMINI_API_KEY || "").trim(),
     geminiModel: (process.env.GEMINI_MODEL || "gemini-2.5-flash").trim(),
     geminiTtsModel: (process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts").trim(),
     geminiTtsVoice: (process.env.GEMINI_TTS_VOICE || "Kore").trim(),
-    compatBase: (process.env.OPENAI_COMPAT_BASE_URL || "").trim().replace(/\/+$/, ""),
-    compatKey: (process.env.OPENAI_COMPAT_API_KEY || "").trim(),
-    compatModel: (process.env.OPENAI_COMPAT_MODEL || "").trim(),
+    compatBase,
+    compatKey,
+    compatModel: rawCompatModel,
     tavilyKey: (process.env.TAVILY_API_KEY || "").trim(),
     perMinute: positiveInt("RATE_LIMIT_PER_MINUTE", 10),
     dailyLimit: positiveInt("DAILY_REQUEST_LIMIT", 100),
@@ -29,6 +42,14 @@ export const env = readEnv();
 export function activeModel(): string {
   const e = readEnv();
   return e.provider === "gemini" ? e.geminiModel : e.compatModel;
+}
+
+export function configuredProviders(): string[] {
+  const e = readEnv();
+  const list: string[] = [];
+  if (e.geminiKey && e.geminiModel) list.push("gemini");
+  if (e.compatBase && e.compatKey && e.compatModel) list.push("openai-compatible");
+  return list;
 }
 
 export function providerConfigured(): boolean {

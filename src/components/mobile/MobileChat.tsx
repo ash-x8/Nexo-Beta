@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, Pause, Play, Plus, Square, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, Menu, Pause, Play, Plus, Square, X } from "lucide-react";
+import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
+import AudioWaveform from "../AudioWaveform";
 import Composer from "../Composer";
 import { MessageBubble } from "../MessageBubble";
 
@@ -12,8 +14,11 @@ interface Props {
   title: string;
   online: boolean;
   busy: boolean;
+  assistantState: AvatarState;
   error: string | null;
+  fallbackNotice: string | null;
   onClearError: () => void;
+  onClearFallbackNotice: () => void;
   messages: ChatMessage[];
   msgsLoading: boolean;
   msgsHasMore: boolean;
@@ -27,6 +32,7 @@ interface Props {
   onResumeSpeak: () => void;
   onStopSpeak: () => void;
   onRegenerate: (msgId: string) => void;
+  onEditResend: (msgId: string, nextText: string) => void;
   searchEnabled: boolean;
   useSearch: boolean;
   onToggleSearch: () => void;
@@ -45,6 +51,7 @@ interface Props {
   onSend: (text: string, files: Attachment[]) => void;
   onStopGen: () => void;
   onBack: () => void;
+  onOpenMenu: () => void;
   onNewChat: () => void;
   initialPrompt?: string;
 }
@@ -54,8 +61,11 @@ export default function MobileChat({
   title,
   online,
   busy,
+  assistantState,
   error,
+  fallbackNotice,
   onClearError,
+  onClearFallbackNotice,
   messages,
   msgsLoading,
   msgsHasMore,
@@ -69,6 +79,7 @@ export default function MobileChat({
   onResumeSpeak,
   onStopSpeak,
   onRegenerate,
+  onEditResend,
   searchEnabled,
   useSearch,
   onToggleSearch,
@@ -87,6 +98,7 @@ export default function MobileChat({
   onSend,
   onStopGen,
   onBack,
+  onOpenMenu,
   onNewChat,
   initialPrompt
 }: Props) {
@@ -117,16 +129,31 @@ export default function MobileChat({
   };
 
   const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+  const stateLabel =
+    assistantState === "listening"
+      ? t.state_listening
+      : assistantState === "thinking"
+        ? t.state_thinking
+        : assistantState === "speaking"
+          ? t.state_speaking
+          : assistantState === "error"
+            ? t.state_error
+            : "";
 
   return (
     <div className="nx-mob-chat">
       <header className="nx-mob-topbar">
-        <button type="button" className="nx-mob-topbar-btn" onClick={onBack} aria-label={t.back}>
-          <ArrowLeft size={20} />
-        </button>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <button type="button" className="nx-mob-topbar-btn" onClick={onBack} aria-label={t.back}>
+            <ArrowLeft size={20} />
+          </button>
+          <button type="button" className="nx-mob-topbar-btn" onClick={onOpenMenu} aria-label={t.menu}>
+            <Menu size={19} />
+          </button>
+        </div>
 
         <div className="nx-mob-topbar-center">
-          <span className={`nx-live-dot ${!online ? "offline" : ""}`} aria-hidden="true" />
+          <span className={`nx-live-dot ${!online ? "offline" : assistantState === "listening" || assistantState === "thinking" ? "recording" : assistantState === "error" ? "error" : ""}`} aria-hidden="true" />
           <span className="nx-mob-topbar-title">{title || t.newChat}</span>
         </div>
 
@@ -157,10 +184,33 @@ export default function MobileChat({
         </div>
       </header>
 
+      {assistantState !== "idle" && (
+        <div className="nx-mob-wave-bar">
+          <span className="nx-mob-wave-label">{stateLabel}</span>
+          <div style={{ flex: 1, maxWidth: 160 }}>
+            <AudioWaveform height={18} bars={18} />
+          </div>
+        </div>
+      )}
+
       <div ref={scrollRef} className="nx-mob-messages" onScroll={onScroll}>
         {!online && (
           <div className="nx-banner offline">
             <span>{t.offlineNote}</span>
+          </div>
+        )}
+
+        {fallbackNotice && (
+          <div className="nx-banner offline">
+            <span>{fallbackNotice}</span>
+            <button
+              type="button"
+              className="nx-banner-close"
+              onClick={onClearFallbackNotice}
+              aria-label={t.close}
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
 
@@ -182,8 +232,10 @@ export default function MobileChat({
         )}
 
         {msgsLoading ? (
-          <div className="nx-boot" style={{ minHeight: 160 }}>
-            <div className="nx-spinner" />
+          <div className="nx-skeleton-stack" aria-busy="true" aria-label={t.loading}>
+            <div className="nx-skeleton-bubble user" />
+            <div className="nx-skeleton-bubble assistant" />
+            <div className="nx-skeleton-bubble assistant short" />
           </div>
         ) : messages.length === 0 ? (
           <div style={{ margin: "auto 0", textAlign: "center", padding: "32px 12px" }}>
@@ -205,6 +257,7 @@ export default function MobileChat({
               onResume={onResumeSpeak}
               onStopSpeak={onStopSpeak}
               onRegenerate={onRegenerate}
+              onEditResend={onEditResend}
             />
           ))
         )}

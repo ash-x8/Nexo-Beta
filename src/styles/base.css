@@ -316,6 +316,17 @@ button:disabled {
   animation: nx-spin 14s linear infinite reverse;
 }
 
+.core-fallback.state-listening span:nth-child(1) {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--accent-violet) 50%, rgba(139, 108, 255, 0.35) 100%);
+}
+.core-fallback.state-speaking span:nth-child(1) {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #2dd4bf 50%, rgba(45, 212, 191, 0.35) 100%);
+}
+.core-fallback.state-error span:nth-child(1) {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--status-err) 55%, rgba(239, 68, 68, 0.35) 100%);
+  box-shadow: 0 0 28px rgba(239, 68, 68, 0.45);
+}
+
 /* Live indicator dot (ONLY used for active network/recording telemetry) */
 .nx-live-dot {
   width: 7px;
@@ -327,6 +338,10 @@ button:disabled {
 
 .nx-live-dot.offline {
   background: var(--status-warn);
+}
+
+.nx-live-dot.error {
+  background: var(--status-err);
 }
 
 .nx-live-dot.recording {
@@ -911,6 +926,151 @@ button:disabled {
   border-radius: 999px;
   background: var(--accent-grad);
   transition: width 240ms var(--ease-out);
+}
+
+/* Message inline edit */
+.nx-msg-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+}
+
+.nx-msg-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Model Selector */
+.nx-model-compact {
+  max-width: 220px;
+}
+
+.nx-select-compact {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+
+.nx-model-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nx-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-model-row {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nx-model-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.nx-model-row.active {
+  border-color: var(--accent-blue);
+  background: var(--bg-active);
+}
+
+.nx-model-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nx-model-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nx-model-status {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--status-ok);
+}
+
+.nx-model-status.rate_limited {
+  color: var(--status-warn);
+}
+
+.nx-model-status.unavailable {
+  color: var(--status-err);
+}
+
+.nx-model-meta,
+.nx-model-caps,
+.nx-model-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nx-model-caps {
+  color: var(--text-secondary);
+}
+
+/* Waveform & Skeleton placeholders */
+.nx-waveform {
+  display: block;
+}
+
+.nx-skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.nx-skeleton-bubble {
+  height: 64px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: nx-shimmer 1.4s ease infinite;
+}
+
+.nx-skeleton-bubble.user {
+  width: 56%;
+  height: 44px;
+  align-self: flex-end;
+}
+
+.nx-skeleton-bubble.assistant {
+  width: 100%;
+  height: 92px;
+}
+
+.nx-skeleton-bubble.short {
+  width: 72%;
+  height: 56px;
+}
+
+@keyframes nx-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* Reduced motion */

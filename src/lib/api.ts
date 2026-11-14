@@ -1,4 +1,4 @@
-import type { Attachment, PublicConfig, ReplyLang, ResponseStyle, StreamEvent, UsageInfo } from "./types";
+import type { Attachment, ModelCatalogItem, PublicConfig, ReplyLang, ResponseStyle, StreamEvent, UsageInfo } from "./types";
 
 export class ApiClientError extends Error {
   constructor(public code: string, message: string) {
@@ -107,10 +107,27 @@ export async function fetchTts(token: string, text: string, signal: AbortSignal)
   return res.arrayBuffer();
 }
 
-export async function fetchModels(token: string): Promise<{ current: string; models: string[] }> {
+export interface ModelsResponse {
+  current: string;
+  provider?: string;
+  freeOnly?: boolean;
+  providerHealth?: string;
+  models: string[];
+  catalog: ModelCatalogItem[];
+}
+
+export async function fetchModels(token: string): Promise<ModelsResponse> {
   const res = await fetch("/api/models", { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) return { current: "", models: [] };
-  return res.json();
+  if (!res.ok) return { current: "", models: [], catalog: [] };
+  const data = (await res.json()) as Partial<ModelsResponse>;
+  return {
+    current: data.current || "",
+    provider: data.provider,
+    freeOnly: data.freeOnly,
+    providerHealth: data.providerHealth,
+    models: Array.isArray(data.models) ? data.models : [],
+    catalog: Array.isArray(data.catalog) ? data.catalog : []
+  };
 }
 
 export async function fetchUsage(token: string): Promise<UsageInfo> {

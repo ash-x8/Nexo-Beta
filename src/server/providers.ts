@@ -7,6 +7,16 @@ export class ProviderError extends Error {
   }
 }
 
+export function isRetryableFallbackError(err: unknown): err is ProviderError {
+  return (
+    err instanceof ProviderError &&
+    (err.code === "provider_rate_limited" ||
+      err.code === "provider_quota" ||
+      err.code === "provider_unavailable" ||
+      err.code === "provider_model")
+  );
+}
+
 export interface ProviderMessage {
   role: "user" | "assistant";
   content: string;

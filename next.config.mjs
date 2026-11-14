@@ -1,4 +1,18 @@
 /** @type {import('next').NextConfig} */
+const csp = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com",
+  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com https://generativelanguage.googleapis.com https://api.tavily.com",
+  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'self' https://aistudio.google.com https://*.googleusercontent.com"
+].join("; ");
+
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["three"],
@@ -14,6 +28,7 @@ const nextConfig = {
     {
       source: "/(.*)",
       headers: [
+        { key: "Content-Security-Policy", value: csp },
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },

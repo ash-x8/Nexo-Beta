@@ -11,11 +11,13 @@ import {
   deleteConversation as fsDeleteConversation,
   loadMessages,
   removeMessage,
+  removeMessagesByIds,
   renameConversation as fsRenameConversation,
   saveMessage,
   subscribeConversations,
   subscribeMemory,
   touchConversation,
+  updateMessageContent,
   updateMessageStatus
 } from "@/lib/store";
 import type { Attachment, ChatMessage, Conversation, MemoryItem, PublicConfig, Source } from "@/lib/types";
@@ -36,6 +38,24 @@ const uidGen = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+export function applyEditedUserMessage(
+  messages: ChatMessage[],
+  msgId: string,
+  nextContent: string,
+  editedAt = Date.now()
+): { kept: ChatMessage[]; removedIds: string[]; editedMsg: ChatMessage } | null {
+  const idx = messages.findIndex((m) => m.id === msgId);
+  if (idx < 0 || messages[idx].role !== "user") return null;
+  const editedMsg: ChatMessage = {
+    ...messages[idx],
+    content: nextContent,
+    editedAt
+  };
+  const kept = [...messages.slice(0, idx), editedMsg];
+  const removedIds = messages.slice(idx + 1).map((m) => m.id);
+  return { kept, removedIds, editedMsg };
+}
 
 export function useChatEngine({
   uid,
@@ -61,6 +81,7 @@ export function useChatEngine({
   const [memory, setMemory] = useState<MemoryItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
 
   const activeIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -69,7 +90,7 @@ export function useChatEngine({
 
   const t = dictionaries[prefs.ui];
 
-  // Sync 3D / orbital core state without causing unnecessary renders
+  // Sync 3D / orbital core 5-state channel without causing React re-renders
   useEffect(() => {
     avatarBus.state = listening
       ? "listening"
@@ -77,8 +98,10 @@ export function useChatEngine({
         ? "thinking"
         : speaking && !paused
           ? "speaking"
-          : "idle";
-  }, [listening, busy, speaking, paused]);
+          : error
+            ? "error"
+            : "idle";
+  }, [listening, busy, speaking, paused, error]);
 
   // Subscribe to conversations (paginated) & memory
   useEffect(() => {
@@ -172,6 +195,7 @@ export function useChatEngine({
     setMessages([]);
     setMsgsHasMore(false);
     setError(null);
+    setFallbackNotice(null);
   }, [busy]);
 
   const selectConversation = useCallback(
@@ -180,6 +204,7 @@ export function useChatEngine({
       if (busy) abortRef.current?.abort();
       stopSpeaking();
       setError(null);
+      setFallbackNotice(null);
       activeIdRef.current = id;
       setActiveId(id);
     },
@@ -204,12 +229,15 @@ export function useChatEngine({
       setMessages((prev) => [...prev, assistantMsg]);
       setBusy(true);
       setError(null);
+      setFallbackNotice(null);
 
       const ac = new AbortController();
       abortRef.current = ac;
 
       let text = "";
       let sources: Source[] | undefined;
+      let modelUsed: string | undefined;
+      let fallbackFrom: string | undefined;
       let streamError: string | undefined;
       let sawDone = false;
 
@@ -242,7 +270,19 @@ export function useChatEngine({
             ac.abort();
             return;
           }
-          if ("sources" in ev) {
+          if ("meta" in ev) {
+            modelUsed = ev.meta.model;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsg.id ? { ...m, modelUsed } : m))
+            );
+          } else if ("fallback" in ev) {
+            fallbackFrom = ev.fallback.from;
+            modelUsed = ev.fallback.to;
+            setFallbackNotice(`${t.fallbackNotice}: ${ev.fallback.to}`);
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsg.id ? { ...m, modelUsed, fallbackFrom } : m))
+            );
+          } else if ("sources" in ev) {
             sources = ev.sources;
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantMsg.id ? { ...m, sources } : m))
@@ -282,7 +322,7 @@ export function useChatEngine({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsg.id
-              ? { ...m, content: text, sources, status: finalStatus, error: streamError }
+              ? { ...m, content: text, sources, modelUsed, fallbackFrom, status: finalStatus, error: streamError }
               : m
           )
         );
@@ -298,6 +338,8 @@ export function useChatEngine({
           ...assistantMsg,
           content: text,
           sources,
+          modelUsed,
+          fallbackFrom,
           status: finalStatus
         };
         try {
@@ -312,7 +354,7 @@ export function useChatEngine({
         speak(text);
       }
     },
-    [uid, getToken, config, prefs, memory, speak]
+    [uid, getToken, config, prefs, memory, speak, t.fallbackNotice]
   );
 
   const sendMessage = useCallback(
@@ -378,6 +420,38 @@ export function useChatEngine({
       await runStream(convId, nextHistory, userMsg.id, useSearch);
     },
     [busy, config, messages, stopSpeaking, t, uid, runStream]
+  );
+
+  const editAndResendMessage = useCallback(
+    async (msgId: string, newContent: string, useSearch: boolean) => {
+      const trimmed = newContent.trim();
+      if (!trimmed || busy || !activeIdRef.current) return;
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        setError(t.offlineNote);
+        return;
+      }
+      const convId = activeIdRef.current;
+      const applied = applyEditedUserMessage(messages, msgId, trimmed);
+      if (!applied) return;
+
+      stopSpeaking();
+      setError(null);
+      setMessages(applied.kept);
+
+      try {
+        await updateMessageContent(uid, convId, applied.editedMsg.id, trimmed, applied.editedMsg.editedAt || Date.now());
+        if (applied.removedIds.length) {
+          await removeMessagesByIds(uid, convId, applied.removedIds);
+        }
+        await touchConversation(uid, convId);
+      } catch (e) {
+        setError(firebaseMessage(e));
+      }
+
+      if (activeIdRef.current !== convId) return;
+      await runStream(convId, applied.kept, applied.editedMsg.id, useSearch);
+    },
+    [busy, messages, stopSpeaking, t.offlineNote, uid, runStream]
   );
 
   const regenerateMessage = useCallback(
@@ -465,10 +539,13 @@ export function useChatEngine({
     memory,
     busy,
     error,
+    fallbackNotice,
     clearError: useCallback(() => setError(null), []),
+    clearFallbackNotice: useCallback(() => setFallbackNotice(null), []),
     startNewChat,
     selectConversation,
     sendMessage,
+    editAndResendMessage,
     stopGeneration,
     regenerateMessage,
     renameConversation,

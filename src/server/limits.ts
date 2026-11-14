@@ -1,6 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb, ApiError } from "./firebaseAdmin";
-import { readEnv } from "./env";
+import { activeModel, providerConfigured, readEnv } from "./env";
+import { getOverallProviderHealth } from "./modelsRegistry";
 
 // Per-instance sliding window. On serverless this is best-effort per warm instance;
 // the Firestore daily counter below is the authoritative limit.
@@ -19,7 +20,7 @@ export function checkRate(uid: string, bucket: string, now = Date.now()): void {
   windows.set(key, recent);
 }
 
-/** Only one generation per user at a time: avoids duplicate/repeated paid calls. */
+/** Only one generation per user at a time: avoids duplicate/repeated calls. */
 export function acquireInflight(uid: string): () => void {
   if (inflight.has(uid)) {
     throw new ApiError(409, "busy", "A response is already being generated. Stop it or wait for it to finish.");
@@ -51,6 +52,16 @@ export async function consumeDaily(uid: string, field: "requests" | "tts"): Prom
   });
 }
 
+export async function recordUsageMetric(uid: string, field: "rateLimitHits" | "fallbackCount"): Promise<void> {
+  try {
+    const day = utcDay();
+    const ref = adminDb().doc(`users/${uid}/usage/${day}`);
+    await ref.set({ [field]: FieldValue.increment(1), updatedAt: Date.now() }, { merge: true });
+  } catch {
+    /* best-effort telemetry metric; never fail main request */
+  }
+}
+
 export async function readUsage(uid: string) {
   const env = readEnv();
   const day = utcDay();
@@ -58,14 +69,24 @@ export async function readUsage(uid: string) {
   const d = snap.data() || {};
   const requests = typeof d.requests === "number" ? d.requests : 0;
   const tts = typeof d.tts === "number" ? d.tts : 0;
+  const rateLimitHits = typeof d.rateLimitHits === "number" ? d.rateLimitHits : 0;
+  const fallbackCount = typeof d.fallbackCount === "number" ? d.fallbackCount : 0;
+  const providerHealth = providerConfigured()
+    ? getOverallProviderHealth([], activeModel())
+    : "unconfigured";
+
   return {
     requests,
     tts,
+    rateLimitHits,
+    fallbackCount,
     day,
     dailyLimit: env.dailyLimit,
     dailyTtsLimit: env.dailyTtsLimit,
     remainingRequests: Math.max(0, env.dailyLimit - requests),
-    remainingTts: Math.max(0, env.dailyTtsLimit - tts)
+    remainingTts: Math.max(0, env.dailyTtsLimit - tts),
+    providerHealth,
+    quotaSource: "account_firestore" as const
   };
 }
 

@@ -9,10 +9,12 @@ import {
   ExternalLink,
   FileText,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
   Square,
-  Volume2
+  Volume2,
+  X
 } from "lucide-react";
 import type { Dict } from "@/lib/i18n";
 import type { ChatMessage } from "@/lib/types";
@@ -29,6 +31,7 @@ interface Props {
   onResume: () => void;
   onStopSpeak: () => void;
   onRegenerate: (msgId: string) => void;
+  onEditResend?: (msgId: string, newContent: string) => void;
 }
 
 function extractText(node: ReactNode): string {
@@ -101,9 +104,13 @@ export const MessageBubble = memo(function MessageBubble({
   onPause,
   onResume,
   onStopSpeak,
-  onRegenerate
+  onRegenerate,
+  onEditResend
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(msg.content);
+
   const isUser = msg.role === "user";
   const streamingEmpty = !isUser && msg.status === "streaming" && !msg.content;
 
@@ -118,12 +125,31 @@ export const MessageBubble = memo(function MessageBubble({
       .catch(() => {});
   };
 
+  const handleSaveEdit = () => {
+    const clean = editDraft.trim();
+    if (!clean || !onEditResend) return;
+    setEditing(false);
+    onEditResend(msg.id, clean);
+  };
+
   return (
     <article className={`nx-msg-row ${isUser ? "user" : "assistant"}`}>
       <div className="nx-msg-meta">
         <span>{isUser ? t.you : t.assistantName}</span>
         <span aria-hidden="true">·</span>
         <span className="tabular">{formatTime(msg.createdAt)}</span>
+        {isUser && msg.editedAt && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>{t.editedNote}</span>
+          </>
+        )}
+        {!isUser && msg.modelUsed && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="mono" style={{ fontSize: 11 }}>{msg.modelUsed}</span>
+          </>
+        )}
       </div>
 
       <div className="nx-msg-bubble">
@@ -139,7 +165,48 @@ export const MessageBubble = memo(function MessageBubble({
         )}
 
         {isUser ? (
-          <div style={{ whiteSpace: "pre-wrap" }}>{msg.content}</div>
+          editing ? (
+            <div className="nx-msg-edit-box">
+              <textarea
+                className="nx-textarea"
+                value={editDraft}
+                maxLength={8000}
+                onChange={(e) => setEditDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleSaveEdit();
+                  } else if (e.key === "Escape") {
+                    setEditing(false);
+                  }
+                }}
+                autoFocus
+              />
+              <div className="nx-msg-edit-actions">
+                <button
+                  type="button"
+                  className="nx-secondary-btn"
+                  style={{ minHeight: 34, padding: "4px 12px" }}
+                  onClick={() => setEditing(false)}
+                >
+                  <X size={13} />
+                  <span>{t.cancel}</span>
+                </button>
+                <button
+                  type="button"
+                  className="nx-secondary-btn"
+                  style={{ minHeight: 34, padding: "4px 12px", borderColor: "var(--accent-blue)", color: "var(--accent-blue)" }}
+                  disabled={!editDraft.trim() || isBusy}
+                  onClick={handleSaveEdit}
+                >
+                  <Check size={13} />
+                  <span>{t.saveAndResend}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ whiteSpace: "pre-wrap" }}>{msg.content}</div>
+          )
         ) : streamingEmpty ? (
           <div className="nx-typing" aria-live="polite">
             <div className="nx-typing-bars" aria-hidden="true">
@@ -221,6 +288,23 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
       </div>
+
+      {isUser && onEditResend && !editing && (
+        <div className="nx-msg-actions">
+          <button
+            type="button"
+            className="nx-action-btn"
+            disabled={isBusy}
+            onClick={() => {
+              setEditDraft(msg.content);
+              setEditing(true);
+            }}
+          >
+            <Pencil size={13} />
+            <span>{t.editMsg}</span>
+          </button>
+        </div>
+      )}
 
       {!isUser && msg.status !== "streaming" && (
         <div className="nx-msg-actions">

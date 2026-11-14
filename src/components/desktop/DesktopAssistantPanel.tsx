@@ -4,6 +4,7 @@ import { Pause, Play, Square } from "lucide-react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 import type { PublicConfig } from "@/lib/types";
+import AudioWaveform from "../AudioWaveform";
 import JarvisCore from "../JarvisCore";
 
 interface Props {
@@ -41,18 +42,25 @@ export default function DesktopAssistantPanel({
         ? t.state_thinking
         : state === "speaking"
           ? t.state_speaking
-          : t.state_idle;
+          : state === "error"
+            ? t.state_error
+            : t.state_idle;
 
   return (
     <aside className="nx-right-panel" aria-label={t.assistantName}>
       <div className="nx-panel-orb-box">
         <div className="nx-panel-orb">
-          <JarvisCore onFail={handleWebglFail} />
+          <JarvisCore onFail={handleWebglFail} state={state} />
         </div>
         <div className="nx-panel-state">
-          <span className={`nx-live-dot ${state === "listening" ? "recording" : ""}`} aria-hidden="true" />
+          <span
+            className={`nx-live-dot ${state === "listening" || state === "thinking" ? "recording" : state === "error" ? "error" : ""}`}
+            aria-hidden="true"
+          />
           <span>{stateLabel}</span>
         </div>
+
+        <AudioWaveform height={26} bars={22} />
 
         {speaking && (
           <div style={{ display: "flex", gap: 6, marginTop: 4 }}>

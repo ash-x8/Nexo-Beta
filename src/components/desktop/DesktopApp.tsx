@@ -1,16 +1,24 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { PanelLeft, PanelRight, Settings, X } from "lucide-react";
+import { ChevronDown, LogOut, PanelLeft, PanelRight, Settings, X } from "lucide-react";
 import type { UserProfile } from "@/lib/auth";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 import type { Prefs } from "@/lib/prefs";
 import { promptsFor } from "@/lib/prompts";
-import type { Attachment, ChatMessage, Conversation, MemoryItem, PublicConfig } from "@/lib/types";
+import type {
+  Attachment,
+  ChatMessage,
+  Conversation,
+  MemoryItem,
+  ModelCatalogItem,
+  PublicConfig
+} from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import Composer from "../Composer";
 import InstallButton from "../InstallButton";
 import { MessageBubble } from "../MessageBubble";
+import ModelSelector from "../ModelSelector";
 import DesktopAssistantPanel from "./DesktopAssistantPanel";
 import DesktopSettingsModal from "./DesktopSettingsModal";
 import DesktopSidebar from "./DesktopSidebar";
@@ -21,6 +29,7 @@ interface Props {
   getToken: () => Promise<string>;
   onLogout: () => Promise<void>;
   config: PublicConfig | null;
+  modelsCatalog: ModelCatalogItem[];
   online: boolean;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
@@ -36,10 +45,13 @@ interface Props {
   memory: MemoryItem[];
   busy: boolean;
   error: string | null;
+  fallbackNotice: string | null;
   clearError: () => void;
+  clearFallbackNotice: () => void;
   startNewChat: () => void;
   selectConversation: (id: string) => void;
   sendMessage: (text: string, files: Attachment[], useSearch: boolean) => Promise<void>;
+  editAndResendMessage: (msgId: string, newContent: string, useSearch: boolean) => Promise<void>;
   stopGeneration: () => void;
   regenerateMessage: (msgId: string, useSearch: boolean) => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
@@ -67,6 +79,7 @@ interface Props {
 export default function DesktopApp(props: Props) {
   const { t, prefs, setPref, config, online, convs, activeId, messages, busy, startNewChat, stopGeneration } = props;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [seedPrompt, setSeedPrompt] = useState<string | undefined>(undefined);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -81,7 +94,9 @@ export default function DesktopApp(props: Props) {
       ? "thinking"
       : props.speaking && !props.paused
         ? "speaking"
-        : "idle";
+        : props.error
+          ? "error"
+          : "idle";
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -96,8 +111,9 @@ export default function DesktopApp(props: Props) {
       } else if (mod && e.key === ",") {
         e.preventDefault();
         setSettingsOpen((v) => !v);
-      } else if (e.key === "Escape" && busy) {
-        stopGeneration();
+      } else if (e.key === "Escape") {
+        setProfileMenuOpen(false);
+        if (busy) stopGeneration();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -158,7 +174,18 @@ export default function DesktopApp(props: Props) {
           </div>
 
           <div className="nx-topbar-right">
-            <div className="nx-mob-meta-line" style={{ marginRight: 6 }}>
+            {props.modelsCatalog.length > 0 && (
+              <ModelSelector
+                t={t}
+                selectedModel={prefs.model}
+                defaultModel={config?.model || "gemini-2.5-flash"}
+                catalog={props.modelsCatalog}
+                onSelect={(modelId) => setPref("model", modelId)}
+                compact
+              />
+            )}
+
+            <div className="nx-mob-meta-line" style={{ marginRight: 4 }}>
               <span className={`nx-live-dot ${!online ? "offline" : ""}`} aria-hidden="true" />
               <span>{!online ? t.offlineShort : config?.configured ? t.available : t.unavailable}</span>
             </div>
@@ -184,6 +211,57 @@ export default function DesktopApp(props: Props) {
             >
               <Settings size={18} />
             </button>
+
+            <div className="nx-profile-menu-wrap">
+              <button
+                type="button"
+                className="nx-profile-trigger"
+                onClick={() => setProfileMenuOpen((v) => !v)}
+                aria-expanded={profileMenuOpen}
+                aria-label={t.account}
+              >
+                <span className="nx-avatar-circle" style={{ width: 28, height: 28, fontSize: 12 }}>
+                  {props.user.photoURL ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={props.user.photoURL} alt={props.user.displayName || "User"} referrerPolicy="no-referrer" />
+                  ) : (
+                    <span>{(props.user.displayName || props.user.email || "U").slice(0, 1).toUpperCase()}</span>
+                  )}
+                </span>
+                <ChevronDown size={14} />
+              </button>
+
+              {profileMenuOpen && (
+                <div className="nx-profile-popover" role="menu">
+                  <div className="nx-profile-popover-head">
+                    <span className="nx-user-name">{props.user.displayName || "NEXO User"}</span>
+                    <span className="nx-user-email">{props.user.email || props.user.uid}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="nx-profile-popover-item"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    <Settings size={14} />
+                    <span>{t.settings}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="nx-profile-popover-item danger"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      props.onLogout();
+                    }}
+                  >
+                    <LogOut size={14} />
+                    <span>{t.signOut}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -194,6 +272,20 @@ export default function DesktopApp(props: Props) {
                 {!online && (
                   <div className="nx-banner offline">
                     <span>{t.offlineNote}</span>
+                  </div>
+                )}
+
+                {props.fallbackNotice && (
+                  <div className="nx-banner offline">
+                    <span>{props.fallbackNotice}</span>
+                    <button
+                      type="button"
+                      className="nx-banner-close"
+                      onClick={props.clearFallbackNotice}
+                      aria-label={t.close}
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 )}
 
@@ -220,8 +312,10 @@ export default function DesktopApp(props: Props) {
                 )}
 
                 {props.msgsLoading ? (
-                  <div className="nx-boot" style={{ minHeight: 240 }}>
-                    <div className="nx-spinner" />
+                  <div className="nx-skeleton-stack" aria-busy="true" aria-label={t.loading}>
+                    <div className="nx-skeleton-bubble user" />
+                    <div className="nx-skeleton-bubble assistant" />
+                    <div className="nx-skeleton-bubble assistant short" />
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="nx-desk-empty">
@@ -256,6 +350,9 @@ export default function DesktopApp(props: Props) {
                       onResume={props.onResumeSpeak}
                       onStopSpeak={props.onStopSpeak}
                       onRegenerate={(msgId) => props.regenerateMessage(msgId, props.useSearch)}
+                      onEditResend={(msgId, nextText) =>
+                        props.editAndResendMessage(msgId, nextText, props.useSearch)
+                      }
                     />
                   ))
                 )}

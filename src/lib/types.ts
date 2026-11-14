@@ -4,6 +4,7 @@ export type ReplyLang = "auto" | Lang;
 export type ResponseStyle = "balanced" | "concise" | "detailed";
 export type Theme = "dark" | "light" | "system";
 export type MessageStatus = "complete" | "streaming" | "stopped" | "error";
+export type ModelStatus = "available" | "rate_limited" | "unavailable";
 
 export interface Attachment {
   name: string;
@@ -26,9 +27,12 @@ export interface ChatMessage {
   role: Role;
   content: string;
   createdAt: number;
+  editedAt?: number;
   status?: MessageStatus;
   attachments?: { name: string; mime: string; size?: number }[];
   sources?: Source[];
+  modelUsed?: string;
+  fallbackFrom?: string;
   error?: string;
 }
 
@@ -46,11 +50,40 @@ export interface MemoryItem {
   enabled?: boolean;
 }
 
+export interface ModelCatalogItem {
+  id: string;
+  name: string;
+  provider: string;
+  freeEligible: boolean;
+  status: ModelStatus;
+  isDefault: boolean;
+  capabilities: {
+    streaming: boolean;
+    vision: boolean;
+    pdf: boolean;
+    webSearch: boolean;
+  };
+  contextWindow: number | null;
+  limitNote: string;
+}
+
+export interface DeveloperInfo {
+  projectName: string;
+  creatorName: string;
+  fullName: string;
+  role: string;
+  website: string;
+  copyright: string;
+}
+
 export interface PublicConfig {
   configured: boolean;
   authConfigured: boolean;
   provider: string;
   model: string;
+  freeOnly: boolean;
+  configuredProviders: string[];
+  fallbackReady: boolean;
   searchEnabled: boolean;
   ttsServer: boolean;
   perMinute: number;
@@ -59,21 +92,28 @@ export interface PublicConfig {
   maxInputChars: number;
   maxHistoryMessages: number;
   maxAttachmentMb: number;
+  developer: DeveloperInfo;
   version: string;
 }
 
 export interface UsageInfo {
   requests: number;
   tts: number;
+  rateLimitHits?: number;
+  fallbackCount?: number;
   day: string;
   dailyLimit?: number;
   dailyTtsLimit?: number;
   remainingRequests?: number;
   remainingTts?: number;
+  providerHealth?: "healthy" | "degraded" | "unconfigured";
+  quotaSource?: "account_firestore";
 }
 
 export type StreamEvent =
   | { t: string }
   | { sources: Source[] }
+  | { meta: { model: string; provider: string; freeEligible: boolean } }
+  | { fallback: { from: string; to: string; reason: string } }
   | { done: true }
   | { error: { code: string; message: string } };

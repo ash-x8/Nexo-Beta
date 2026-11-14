@@ -128,11 +128,27 @@ export async function saveMessage(uid: string, cid: string, m: ChatMessage): Pro
     role: m.role,
     content: m.content.slice(0, 100000),
     createdAt: m.createdAt,
+    editedAt: m.editedAt,
     status: m.status || "complete",
     attachments: m.attachments,
-    sources: m.sources
+    sources: m.sources,
+    modelUsed: m.modelUsed,
+    fallbackFrom: m.fallbackFrom
   });
   await setDoc(doc(db(), `users/${uid}/conversations/${cid}/messages/${m.id}`), payload);
+}
+
+export async function updateMessageContent(
+  uid: string,
+  cid: string,
+  mid: string,
+  content: string,
+  editedAt: number
+): Promise<void> {
+  await updateDoc(doc(db(), `users/${uid}/conversations/${cid}/messages/${mid}`), {
+    content: content.slice(0, 100000),
+    editedAt
+  });
 }
 
 export async function updateMessageStatus(
@@ -149,6 +165,17 @@ export async function updateMessageStatus(
 
 export async function removeMessage(uid: string, cid: string, mid: string): Promise<void> {
   await deleteDoc(doc(db(), `users/${uid}/conversations/${cid}/messages/${mid}`));
+}
+
+export async function removeMessagesByIds(uid: string, cid: string, mids: string[]): Promise<void> {
+  if (!firebaseReady || mids.length === 0) return;
+  for (let i = 0; i < mids.length; i += 400) {
+    const batch = writeBatch(db());
+    mids.slice(i, i + 400).forEach((mid) => {
+      batch.delete(doc(db(), `users/${uid}/conversations/${cid}/messages/${mid}`));
+    });
+    await batch.commit();
+  }
 }
 
 export function subscribeMemory(uid: string, cb: (m: MemoryItem[]) => void) {

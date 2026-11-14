@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatEngine } from "@/hooks/useChatEngine";
 import { usePreferences } from "@/hooks/usePreferences";
-import { fetchConfig } from "@/lib/api";
+import { fetchConfig, fetchModels } from "@/lib/api";
 import type { UserProfile } from "@/lib/auth";
 import { dictionaries } from "@/lib/i18n";
-import type { ChatMessage, PublicConfig } from "@/lib/types";
+import type { ChatMessage, ModelCatalogItem, PublicConfig } from "@/lib/types";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
 import { useSpeaker } from "@/lib/useSpeaker";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
@@ -23,6 +23,7 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
   const isMobile = useIsMobile();
   const online = useOnlineStatus();
   const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [modelsCatalog, setModelsCatalog] = useState<ModelCatalogItem[]>([]);
   const [useSearch, setUseSearch] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
 
@@ -34,6 +35,19 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
       .then(setConfig)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    getToken()
+      .then((tok) => fetchModels(tok))
+      .then((res) => {
+        if (active && res.catalog.length) setModelsCatalog(res.catalog);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [getToken]);
 
   const speaker = useSpeaker(getToken, Boolean(config?.ttsServer), prefs.voiceName);
 
@@ -92,6 +106,7 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     getToken,
     onLogout,
     config,
+    modelsCatalog,
     online,
     prefs,
     setPref,
@@ -107,10 +122,13 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     memory: engine.memory,
     busy: engine.busy,
     error: engine.error,
+    fallbackNotice: engine.fallbackNotice,
     clearError: engine.clearError,
+    clearFallbackNotice: engine.clearFallbackNotice,
     startNewChat: engine.startNewChat,
     selectConversation: engine.selectConversation,
     sendMessage: engine.sendMessage,
+    editAndResendMessage: engine.editAndResendMessage,
     stopGeneration: engine.stopGeneration,
     regenerateMessage: engine.regenerateMessage,
     renameConversation: engine.renameConversation,

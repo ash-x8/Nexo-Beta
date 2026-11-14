@@ -1,7 +1,19 @@
 import { ApiError, requireUser } from "@/server/firebaseAdmin";
-import { acquireInflight, checkRate, consumeDaily } from "@/server/limits";
+import { acquireInflight, checkRate, consumeDaily, recordUsageMetric } from "@/server/limits";
 import { providerConfigured, readEnv } from "@/server/env";
-import { activeProvider, availableModels, ProviderError, streamChat, type ProviderMessage } from "@/server/providers";
+import {
+  getFreeFallbackCandidates,
+  isFreeEligibleModel,
+  markModelHealth
+} from "@/server/modelsRegistry";
+import {
+  activeProvider,
+  availableModels,
+  isRetryableFallbackError,
+  ProviderError,
+  streamChat,
+  type ProviderMessage
+} from "@/server/providers";
 import { webSearch } from "@/server/search";
 import { systemPrompt } from "@/server/prompt";
 import { ALLOWED_ATTACHMENT_MIME, ChatBodySchema } from "@/lib/schemas";
@@ -70,19 +82,33 @@ export async function POST(req: Request) {
       throw new ApiError(413, "too_large", `Attachments exceed ${e.maxAttachmentMb} MB.`);
     }
 
-    checkRate(uid, "chat");
+    try {
+      checkRate(uid, "chat");
+    } catch (rateErr) {
+      await recordUsageMetric(uid, "rateLimitHits");
+      throw rateErr;
+    }
 
-    // Validate optional user-selected model against models reported by the provider.
-    let model: string | undefined;
-    if (body.model && body.model !== provider.defaultModel()) {
+    const defaultModel = provider.defaultModel();
+    let reportedModels: string[] = [];
+    const selectedModel = body.model || defaultModel;
+
+    if (e.freeOnly && !isFreeEligibleModel(selectedModel, provider.id, defaultModel)) {
+      throw new ApiError(
+        403,
+        "paid_model_blocked",
+        "Only verified free-tier models are enabled. Choose an available free model."
+      );
+    }
+
+    if (body.model && body.model !== defaultModel) {
       const vc = new AbortController();
       const vt = setTimeout(() => vc.abort(), 8000);
       try {
-        const models = await availableModels(vc.signal);
-        if (!models.includes(body.model)) {
-          throw new ApiError(400, "bad_model", "That model is not available. Choose another in Settings.");
+        reportedModels = await availableModels(vc.signal);
+        if (reportedModels.length > 0 && !reportedModels.includes(body.model) && !isFreeEligibleModel(body.model, provider.id, defaultModel)) {
+          throw new ApiError(400, "bad_model", "That model is not available. Choose another free model.");
         }
-        model = body.model;
       } catch (err) {
         if (err instanceof ApiError) throw err;
         throw new ApiError(503, "model_check", "Could not verify the selected model right now. Use the default model or try again.");
@@ -92,7 +118,14 @@ export async function POST(req: Request) {
     }
 
     release = acquireInflight(uid);
-    await consumeDaily(uid, "requests");
+    try {
+      await consumeDaily(uid, "requests");
+    } catch (quotaErr) {
+      if (quotaErr instanceof ApiError && quotaErr.status === 429) {
+        await recordUsageMetric(uid, "rateLimitHits");
+      }
+      throw quotaErr;
+    }
 
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), e.timeoutMs);
@@ -131,16 +164,86 @@ export async function POST(req: Request) {
             attachments: m.attachments
           }));
 
+          const fallbackCandidates = getFreeFallbackCandidates(
+            provider.id,
+            selectedModel,
+            reportedModels,
+            defaultModel
+          );
+          const attemptQueue = [selectedModel, ...fallbackCandidates];
+
           let produced = false;
-          for await (const t of streamChat(system, msgs, ac.signal, model)) {
-            if (t) {
-              produced = true;
-              controller.enqueue(line({ t }));
+          let lastError: unknown;
+
+          for (let idx = 0; idx < attemptQueue.length; idx++) {
+            const candidate = attemptQueue[idx];
+            if (e.freeOnly && !isFreeEligibleModel(candidate, provider.id, defaultModel)) {
+              continue;
+            }
+
+            if (idx > 0) {
+              controller.enqueue(
+                line({
+                  fallback: {
+                    from: attemptQueue[idx - 1],
+                    to: candidate,
+                    reason:
+                      lastError instanceof ProviderError ? lastError.code : "provider_unavailable"
+                  }
+                })
+              );
+              await recordUsageMetric(uid, "fallbackCount");
+            }
+
+            controller.enqueue(
+              line({
+                meta: {
+                  model: candidate,
+                  provider: provider.id,
+                  freeEligible: isFreeEligibleModel(candidate, provider.id, defaultModel)
+                }
+              })
+            );
+
+            let chunkProduced = false;
+            try {
+              for await (const t of streamChat(system, msgs, ac.signal, candidate)) {
+                if (t) {
+                  chunkProduced = true;
+                  produced = true;
+                  controller.enqueue(line({ t }));
+                }
+              }
+              markModelHealth(candidate, "available");
+              break;
+            } catch (candidateErr) {
+              lastError = candidateErr;
+              if (candidateErr instanceof ProviderError) {
+                if (candidateErr.code === "provider_rate_limited" || candidateErr.code === "provider_quota") {
+                  markModelHealth(candidate, "rate_limited");
+                  await recordUsageMetric(uid, "rateLimitHits");
+                } else if (candidateErr.code === "provider_model" || candidateErr.code === "provider_unavailable") {
+                  markModelHealth(candidate, "unavailable");
+                }
+              }
+
+              const canFallback =
+                !req.signal.aborted &&
+                !ac.signal.aborted &&
+                !chunkProduced &&
+                idx < attemptQueue.length - 1 &&
+                isRetryableFallbackError(candidateErr);
+
+              if (!canFallback) {
+                throw candidateErr;
+              }
             }
           }
 
           if (!produced) {
-            controller.enqueue(line({ error: { code: "empty", message: "The model returned an empty answer. Try rephrasing." } }));
+            controller.enqueue(
+              line({ error: { code: "empty", message: "The model returned an empty answer. Try rephrasing." } })
+            );
           } else {
             controller.enqueue(line({ done: true }));
           }

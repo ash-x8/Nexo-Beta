@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { applyEditedUserMessage } from "@/hooks/useChatEngine";
 import { firebaseMessage } from "@/lib/errors";
 import { validateAttachmentMeta } from "@/lib/files";
 import { dictionaries } from "@/lib/i18n";
 import { looksSensitive, selectMemories } from "@/lib/memory";
 import { sanitizePrefs } from "@/lib/prefs";
+import type { ChatMessage } from "@/lib/types";
 import { plainForSpeech } from "@/lib/useSpeaker";
 import { _resetLimitsForTest, acquireInflight, checkRate } from "@/server/limits";
 import { systemPrompt } from "@/server/prompt";
@@ -77,24 +79,39 @@ describe("client libs & limits", () => {
     release2();
   });
 
-  it("builds personalized system prompts and strips markdown for speech", () => {
+  it("builds personalized system prompts with developer identity, Sinhala/Singlish guidance, and strips markdown", () => {
     const prompt = systemPrompt({
-      language: "si",
+      language: "auto",
       responseStyle: "concise",
       nickname: "Ash",
       customInstructions: "Keep examples short.",
       memory: ["Prefers TypeScript"],
       searchContext: "[1] Example (https://example.com)"
     });
-    expect(prompt).toContain("Sinhala");
+    expect(prompt).toContain("Ash Wickramasinghe");
+    expect(prompt).toContain("Kushan A Wickramasinghe");
+    expect(prompt).toContain("https://ash-wickramasinghe.site");
+    expect(prompt).toContain("© 2026 Ash Wickramasinghe. All Rights Reserved.");
+    expect(prompt).toContain("Singlish");
     expect(prompt).toContain("brief, direct");
-    expect(prompt).toContain("Ash");
-    expect(prompt).toContain("Keep examples short.");
     expect(prompt).toContain("Prefers TypeScript");
     expect(prompt).toContain("Fresh web search results");
 
     const spoken = plainForSpeech("# Hello\nCheck [NEXO](https://example.com) and `code`\n```ts\nconst x = 1;\n```");
     expect(spoken).toBe("Hello Check NEXO and code");
     expect(firebaseMessage({ code: "permission-denied" })).toContain("firestore.rules");
+  });
+
+  it("slices conversation history cleanly when editing a user message for resend", () => {
+    const history: ChatMessage[] = [
+      { id: "m1", role: "user", content: "Original q", createdAt: 1 },
+      { id: "m2", role: "assistant", content: "Old reply", createdAt: 2 },
+      { id: "m3", role: "user", content: "Follow up", createdAt: 3 }
+    ];
+    const result = applyEditedUserMessage(history, "m1", "Updated question", 999);
+    expect(result).not.toBeNull();
+    expect(result?.kept).toEqual([{ id: "m1", role: "user", content: "Updated question", createdAt: 1, editedAt: 999 }]);
+    expect(result?.removedIds).toEqual(["m2", "m3"]);
+    expect(applyEditedUserMessage(history, "m2", "Nope")).toBeNull();
   });
 });

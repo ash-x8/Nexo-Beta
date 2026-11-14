@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { avatarBus } from "./avatarBus";
 
 export type MicPermission = "unknown" | "granted" | "denied" | "prompt" | "unsupported";
 
@@ -18,7 +19,7 @@ interface SpeechRecLike {
 
 /**
  * Manual-only speech-to-text. Recognition starts ONLY inside start() (user click),
- * never restarts itself (continuous = false), and tracks passive permission state.
+ * never restarts itself (continuous = false), and drives avatarBus.level on speech frames.
  */
 export function useSpeechRecognition(lang: string, onFinal: (text: string) => void) {
   const [supported, setSupported] = useState(false);
@@ -61,6 +62,7 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
       } catch {
         /* noop */
       }
+      avatarBus.level = 0;
     };
   }, []);
 
@@ -93,9 +95,11 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
       interimRef.current = `${fin} ${tmp}`.trim();
       setInterim(interimRef.current);
       setPermission("granted");
+      avatarBus.level = Math.min(1, 0.35 + (interimRef.current.length % 12) * 0.05);
     };
 
     rec.onerror = (e) => {
+      avatarBus.level = 0;
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
         setPermission("denied");
         setError("Microphone permission was denied. Allow it in your browser's site settings.");
@@ -114,6 +118,7 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
 
     rec.onend = () => {
       recRef.current = null;
+      avatarBus.level = 0;
       setListening(false);
       const text = (finalRef.current || interimRef.current || "").trim();
       setInterim("");
@@ -124,8 +129,10 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
     try {
       rec.start();
       setListening(true);
+      avatarBus.level = 0.25;
     } catch {
       recRef.current = null;
+      avatarBus.level = 0;
       setError("Could not start the microphone.");
     }
   }, [lang]);
@@ -140,6 +147,7 @@ export function useSpeechRecognition(lang: string, onFinal: (text: string) => vo
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
+    avatarBus.level = 0;
     try {
       recRef.current?.abort();
     } catch {
