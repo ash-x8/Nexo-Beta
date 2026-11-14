@@ -5,15 +5,16 @@ import { pcmToWav, ProviderError } from "@/server/providers";
 let cachedClientKey = "";
 let cachedClient: GoogleGenAI | null = null;
 
-export function getGeminiClient(): GoogleGenAI {
+export function getGeminiClient(apiKeyOverride?: string): GoogleGenAI {
   const { geminiKey } = readEnv();
-  if (!geminiKey) {
+  const effectiveKey = (apiKeyOverride || geminiKey || "").trim();
+  if (!effectiveKey) {
     throw new ProviderError("server_config", "GEMINI_API_KEY is not configured on the server.");
   }
-  if (!cachedClient || cachedClientKey !== geminiKey) {
-    cachedClientKey = geminiKey;
+  if (!cachedClient || cachedClientKey !== effectiveKey) {
+    cachedClientKey = effectiveKey;
     cachedClient = new GoogleGenAI({
-      apiKey: geminiKey,
+      apiKey: effectiveKey,
       httpOptions: {
         headers: {
           "User-Agent": "aistudio-build"
@@ -173,8 +174,9 @@ export async function synthesizeGeminiTts(opts: {
   text: string;
   model: string;
   voiceName: string;
+  apiKeyOverride?: string;
 }): Promise<{ data: ArrayBuffer; mimeType: string }> {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(opts.apiKeyOverride);
   try {
     const response = await ai.models.generateContent({
       model: opts.model,

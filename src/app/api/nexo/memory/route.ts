@@ -3,6 +3,7 @@ import { ApiError, requireAuthContext } from "@/server/firebaseAdmin";
 import { checkRate } from "@/server/limits";
 import { consolidateConversationMemory } from "@/server/nexo/memoryEngine";
 import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,8 +12,12 @@ export async function POST(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
     const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
     const effective = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
 
+    if (runtimeCfg.maintenance.enabled && !ctx.isOwner) {
+      throw new ApiError(503, "maintenance", runtimeCfg.maintenance.message || "NEXO AI is under maintenance.");
+    }
     if (!effective.personalMemory) {
       throw new ApiError(403, "feature_disabled", "Memory is currently disabled.");
     }

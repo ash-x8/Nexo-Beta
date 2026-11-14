@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordAuditLog } from "@/server/adminAudit";
-import { adminDb, ApiError, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
+import { adminDb, ApiError, assertSameOrigin, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 import { getRuntimeConfig, invalidateRuntimeConfigCache, sanitizePlainText } from "@/server/runtimeConfig";
 import { AnnouncementInputSchema } from "@/lib/schemas";
 import type { AnnouncementItem } from "@/lib/types";
@@ -30,6 +30,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to save announcements.");
@@ -77,6 +78,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to update announcements.");
@@ -122,6 +124,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to delete announcements.");

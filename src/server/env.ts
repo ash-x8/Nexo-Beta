@@ -1,15 +1,45 @@
 function positiveInt(name: string, fallback: number): number {
-  const v = Number(process.env[name]);
+  const v = Number(readRawKey(name));
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
 }
 
-export function readEnv() {
-  const rawCompatKey = (process.env.OPENAI_COMPAT_API_KEY || "").trim();
-  const rawCompatBase = (process.env.OPENAI_COMPAT_BASE_URL || "").trim().replace(/\/+$/, "");
-  const rawCompatModel = (process.env.OPENAI_COMPAT_MODEL || "").trim();
+export type SecretResolutionMode = "runtime_first" | "env_first";
 
-  const openRouterKey = (process.env.OPENROUTER_API_KEY || "").trim();
-  const openAiKey = (process.env.OPENAI_API_KEY || "").trim();
+let runtimeSecretOverlay: Record<string, string> = {};
+let runtimeSecretResolutionMode: SecretResolutionMode = "runtime_first";
+
+export function setRuntimeSecretOverlay(
+  secretsMap: Record<string, string>,
+  mode: SecretResolutionMode = "runtime_first"
+): void {
+  runtimeSecretOverlay = { ...secretsMap };
+  runtimeSecretResolutionMode = mode;
+}
+
+export function clearRuntimeSecretOverlay(): void {
+  runtimeSecretOverlay = {};
+}
+
+export function getRuntimeSecretOverlayKeys(): string[] {
+  return Object.keys(runtimeSecretOverlay).filter((k) => Boolean(runtimeSecretOverlay[k]));
+}
+
+function readRawKey(name: string): string {
+  const envVal = (process.env[name] || "").trim();
+  const runtimeVal = (runtimeSecretOverlay[name] || "").trim();
+  if (runtimeSecretResolutionMode === "env_first") {
+    return envVal || runtimeVal;
+  }
+  return runtimeVal || envVal;
+}
+
+export function readEnv() {
+  const rawCompatKey = readRawKey("OPENAI_COMPAT_API_KEY");
+  const rawCompatBase = readRawKey("OPENAI_COMPAT_BASE_URL").replace(/\/+$/, "");
+  const rawCompatModel = readRawKey("OPENAI_COMPAT_MODEL");
+
+  const openRouterKey = readRawKey("OPENROUTER_API_KEY");
+  const openAiKey = readRawKey("OPENAI_API_KEY");
 
   const compatKey = rawCompatKey || openRouterKey || openAiKey;
   const compatBase =
@@ -17,19 +47,20 @@ export function readEnv() {
     (openRouterKey && !rawCompatKey ? "https://openrouter.ai/api/v1" : openAiKey && !rawCompatKey ? "https://api.openai.com/v1" : "");
 
   return {
-    provider: (process.env.AI_PROVIDER || "gemini").trim().toLowerCase(),
-    freeOnly: (process.env.FREE_ONLY_MODE || "true").trim().toLowerCase() !== "false",
-    geminiKey: (process.env.GEMINI_API_KEY || "").trim(),
-    geminiModel: (process.env.GEMINI_MODEL || "gemini-2.5-flash").trim(),
-    geminiImageModel: (process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image").trim(),
-    geminiTranscribeModel: (process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-2.5-flash").trim(),
-    geminiTtsModel: (process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts").trim(),
-    geminiTtsVoice: (process.env.GEMINI_TTS_VOICE || "Kore").trim(),
+    provider: (readRawKey("AI_PROVIDER") || "gemini").toLowerCase(),
+    freeOnly: (readRawKey("FREE_ONLY_MODE") || "true").toLowerCase() !== "false",
+    geminiKey: readRawKey("GEMINI_API_KEY"),
+    geminiTtsKey: readRawKey("GEMINI_TTS_API_KEY") || readRawKey("GEMINI_API_KEY"),
+    geminiModel: readRawKey("GEMINI_MODEL") || "gemini-2.5-flash",
+    geminiImageModel: readRawKey("GEMINI_IMAGE_MODEL") || "gemini-2.5-flash-image",
+    geminiTranscribeModel: readRawKey("GEMINI_TRANSCRIBE_MODEL") || "gemini-2.5-flash",
+    geminiTtsModel: readRawKey("GEMINI_TTS_MODEL") || "gemini-2.5-flash-preview-tts",
+    geminiTtsVoice: readRawKey("GEMINI_TTS_VOICE") || "Kore",
     compatBase,
     compatKey,
     compatModel: rawCompatModel,
-    compatImageModel: (process.env.OPENAI_IMAGE_MODEL || "gpt-image-1").trim(),
-    tavilyKey: (process.env.TAVILY_API_KEY || "").trim(),
+    compatImageModel: readRawKey("OPENAI_IMAGE_MODEL") || "gpt-image-1",
+    tavilyKey: readRawKey("TAVILY_API_KEY"),
     perMinute: positiveInt("RATE_LIMIT_PER_MINUTE", 10),
     dailyLimit: positiveInt("DAILY_REQUEST_LIMIT", 100),
     dailyTtsLimit: positiveInt("DAILY_TTS_LIMIT", 40),
@@ -69,6 +100,23 @@ export function authConfigured(): boolean {
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
     process.env.NEXT_PUBLIC_FIREBASE_APP_ID
   );
+}
+
+export function vercelConfigured(): { configured: boolean; hasToken: boolean; hasProjectId: boolean; hasTeamId: boolean } {
+  const hasToken = !!(process.env.VERCEL_TOKEN || "").trim();
+  const hasProjectId = !!(process.env.VERCEL_PROJECT_ID || "").trim();
+  const hasTeamId = !!(process.env.VERCEL_TEAM_ID || "").trim();
+  return {
+    configured: hasToken && hasProjectId,
+    hasToken,
+    hasProjectId,
+    hasTeamId
+  };
+}
+
+export function encryptionKeyConfigured(): boolean {
+  const raw = (process.env.NEXO_MASTER_SECRET_KEY || process.env.SECRET_ENCRYPTION_KEY || "").trim();
+  return raw.length >= 16;
 }
 
 /** Returns names of missing required variables (never values) for diagnostics. */

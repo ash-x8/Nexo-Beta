@@ -3,16 +3,20 @@ import type {
   AnnouncementItem,
   Attachment,
   AuditLogEntry,
+  ConfigVersionEntry,
   ModelCatalogItem,
   ProviderHealthTelemetry,
   PublicConfig,
   ReplyLang,
   ResponseStyle,
   ResponseTone,
+  RuntimeSecretMeta,
   SecurityEventEntry,
   SessionInfo,
   StreamEvent,
   UsageInfo,
+  VercelEnvVarItem,
+  VercelInventoryResponse,
   VoiceInputLang
 } from "./types";
 
@@ -374,5 +378,116 @@ export const adminApi = {
     adminFetch<{ ok: boolean; message: string }>(token, "/api/admin/migrations", {
       method: "POST",
       body: JSON.stringify({ action })
-    })
+    }),
+  getVercelEnv: (token: string) =>
+    adminFetch<VercelInventoryResponse>(token, "/api/admin/vercel/env"),
+  createVercelEnv: (
+    token: string,
+    body: {
+      key: string;
+      value: string;
+      type: "plain" | "encrypted" | "sensitive";
+      target: Array<"production" | "preview" | "development">;
+      customEnvironmentIds?: string[];
+      gitBranch?: string;
+      comment?: string;
+    }
+  ) =>
+    adminFetch<{ ok: boolean; item: VercelEnvVarItem }>(token, "/api/admin/vercel/env", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  updateVercelEnv: (
+    token: string,
+    body: {
+      id: string;
+      key?: string;
+      value?: string;
+      type?: "plain" | "encrypted" | "sensitive";
+      target?: Array<"production" | "preview" | "development">;
+      customEnvironmentIds?: string[];
+      gitBranch?: string | null;
+      comment?: string;
+      confirmProduction?: boolean;
+    }
+  ) =>
+    adminFetch<{ ok: boolean; item: VercelEnvVarItem }>(token, "/api/admin/vercel/env", {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }),
+  deleteVercelEnv: (
+    token: string,
+    body: { id: string; key?: string; isProduction?: boolean; confirmProduction?: boolean }
+  ) =>
+    adminFetch<{ ok: boolean; id: string }>(token, "/api/admin/vercel/env", {
+      method: "DELETE",
+      body: JSON.stringify(body)
+    }),
+  triggerVercelRedeploy: (token: string, target: "production" | "preview") =>
+    adminFetch<{ ok: boolean; deploymentId: string; url: string; state: string; target: string }>(
+      token,
+      "/api/admin/vercel/deploy",
+      {
+        method: "POST",
+        body: JSON.stringify({ target, confirmDeploy: true })
+      }
+    ),
+  getSecrets: (token: string) =>
+    adminFetch<{ encryptionConfigured: boolean; vercelConfigured: boolean; items: RuntimeSecretMeta[] }>(
+      token,
+      "/api/admin/secrets"
+    ),
+  saveSecret: (
+    token: string,
+    body: {
+      id?: string;
+      name: string;
+      envKey?: string;
+      provider: RuntimeSecretMeta["provider"];
+      value?: string;
+      description?: string;
+      environment: RuntimeSecretMeta["environment"];
+      active: boolean;
+    }
+  ) =>
+    adminFetch<{ ok: boolean; item: RuntimeSecretMeta }>(token, "/api/admin/secrets", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  toggleSecret: (token: string, id: string, active: boolean) =>
+    adminFetch<{ ok: boolean; item: RuntimeSecretMeta }>(token, "/api/admin/secrets", {
+      method: "PATCH",
+      body: JSON.stringify({ id, action: "toggle", active })
+    }),
+  syncSecretToVercel: (
+    token: string,
+    id: string,
+    vercelTargets?: Array<"production" | "preview" | "development">
+  ) =>
+    adminFetch<{ ok: boolean; synced: boolean; envKey: string; targets: string[]; redeployRequired: boolean }>(
+      token,
+      "/api/admin/secrets",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ id, action: "sync_to_vercel", vercelTargets })
+      }
+    ),
+  deleteSecret: (token: string, id: string) =>
+    adminFetch<{ ok: boolean; id: string }>(token, "/api/admin/secrets", {
+      method: "DELETE",
+      body: JSON.stringify({ id })
+    }),
+  getConfigHistory: (token: string, section?: ConfigVersionEntry["section"]) => {
+    const qs = section ? `?section=${encodeURIComponent(section)}` : "";
+    return adminFetch<{ versions: ConfigVersionEntry[] }>(token, `/api/admin/config/history${qs}`);
+  },
+  rollbackConfig: (token: string, versionId: string) =>
+    adminFetch<{ ok: boolean; section: string; version: number; data: Record<string, unknown> }>(
+      token,
+      "/api/admin/config/history",
+      {
+        method: "POST",
+        body: JSON.stringify({ versionId })
+      }
+    )
 };

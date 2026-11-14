@@ -87,7 +87,8 @@ export const GlobalConfigUpdateSchema = z
     maxAttachmentMb: z.number().int().min(1).max(25),
     rateLimitPerMinute: z.number().int().min(1).max(120),
     dailyRequestLimit: z.number().int().min(1).max(10000),
-    dailyTtsLimit: z.number().int().min(0).max(5000)
+    dailyTtsLimit: z.number().int().min(0).max(5000),
+    secretResolutionMode: z.enum(["runtime_first", "env_first"])
   })
   .partial();
 
@@ -180,7 +181,65 @@ export const UserAdminPatchSchema = z.object({
     .optional()
 });
 
+export const VercelEnvCreateSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Z0-9_]+$/, "Variable name must use uppercase letters, numbers, and underscores."),
+  value: z.string().min(1).max(65536),
+  type: z.enum(["plain", "encrypted", "sensitive"]).default("encrypted"),
+  target: z.array(z.string().trim().min(1).max(80)).min(1).max(12),
+  customEnvironmentIds: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+  gitBranch: z.string().trim().max(120).optional(),
+  comment: z.string().trim().max(300).optional()
+});
+
+export const VercelEnvUpdateSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  key: z.string().trim().min(1).max(128).optional(),
+  value: z.string().min(1).max(65536).optional(),
+  type: z.enum(["plain", "encrypted", "sensitive"]).optional(),
+  target: z.array(z.string().trim().min(1).max(80)).min(1).max(12).optional(),
+  customEnvironmentIds: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+  gitBranch: z.string().trim().max(120).nullable().optional(),
+  comment: z.string().trim().max(300).optional(),
+  confirmProduction: z.boolean().optional()
+});
+
+export const VercelEnvDeleteSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  key: z.string().trim().min(1).max(128).optional(),
+  isProduction: z.boolean().optional(),
+  confirmProduction: z.boolean().optional()
+});
+
+export const RuntimeSecretCreateSchema = z.object({
+  id: z.string().trim().max(80).optional(),
+  name: z.string().trim().min(1).max(80),
+  envKey: z
+    .string()
+    .trim()
+    .max(128)
+    .regex(/^[A-Za-z0-9_]*$/)
+    .optional(),
+  provider: z.enum(["gemini", "gemini_tts", "openai", "openrouter", "openai_compatible", "tavily", "custom"]),
+  value: z.string().max(16384).optional(),
+  description: z.string().trim().max(240).optional(),
+  environment: z.enum(["all", "production", "preview", "development"]).default("all"),
+  active: z.boolean().default(true)
+});
+
+export const RuntimeSecretPatchSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  active: z.boolean().optional(),
+  action: z.enum(["toggle", "sync_to_vercel"]).optional(),
+  vercelTargets: z.array(z.enum(["production", "preview", "development"])).optional()
+});
+
 export type ChatBodyInput = z.infer<typeof ChatBodySchema>;
 export type NexoImageBodyInput = z.infer<typeof NexoImageBodySchema>;
 export type NexoTranscribeBodyInput = z.infer<typeof NexoTranscribeBodySchema>;
 export type TtsBodyInput = z.infer<typeof TtsBodySchema>;
+

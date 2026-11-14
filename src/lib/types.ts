@@ -63,6 +63,7 @@ export interface GlobalConfig {
   rateLimitPerMinute: number;
   dailyRequestLimit: number;
   dailyTtsLimit: number;
+  secretResolutionMode?: "runtime_first" | "env_first";
   version: number;
   updatedAt: number;
   updatedBy: string;
@@ -386,4 +387,108 @@ export type StreamEvent =
   | { fallback: { from: string; to: string; reason: string } }
   | { done: true }
   | { error: { code: string; message: string } };
+
+export type VercelEnvVarType = "plain" | "encrypted" | "sensitive" | "secret" | "system";
+export type VercelEnvValueStatus =
+  | "value_available"
+  | "secret_masked"
+  | "value_unavailable"
+  | "not_configured"
+  | "sync_failed";
+export type VercelEnvOwnership =
+  | "managed_by_nexo"
+  | "created_manually_in_vercel"
+  | "externally_modified"
+  | "sync_pending"
+  | "sync_failed";
+
+export interface VercelCustomEnvSummary {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface VercelEnvVarItem {
+  id: string;
+  key: string;
+  type: VercelEnvVarType;
+  target: string[];
+  customEnvironmentIds: string[];
+  gitBranch: string | null;
+  comment: string | null;
+  valueStatus: VercelEnvValueStatus;
+  value: string | null;
+  maskedDisplay: string;
+  ownership: VercelEnvOwnership;
+  createdAt: number | null;
+  updatedAt: number | null;
+  lastSyncedAt: number | null;
+  lastSyncError?: string | null;
+}
+
+export interface VercelEnvComparisonRow {
+  key: string;
+  production: boolean;
+  preview: boolean;
+  development: boolean;
+  customCount: number;
+  consistent: boolean;
+  missingTargets: string[];
+}
+
+export interface VercelDeploymentSummary {
+  uid: string;
+  name: string;
+  url: string;
+  state: string;
+  target: string | null;
+  createdAt: number;
+}
+
+export interface VercelInventoryResponse {
+  configured: boolean;
+  projectIdConfigured: boolean;
+  tokenConfigured: boolean;
+  teamIdConfigured: boolean;
+  projectName?: string;
+  redeployPending: boolean;
+  customEnvironments: VercelCustomEnvSummary[];
+  envs: VercelEnvVarItem[];
+  comparison: VercelEnvComparisonRow[];
+  missingExpectedKeys: string[];
+  deployments: VercelDeploymentSummary[];
+  fetchedAt: number;
+  error?: string;
+}
+
+export interface RuntimeSecretMeta {
+  id: string;
+  name: string;
+  envKey: string;
+  provider: "gemini" | "gemini_tts" | "openai" | "openrouter" | "openai_compatible" | "tavily" | "custom";
+  description: string;
+  environment: "all" | "production" | "preview" | "development";
+  active: boolean;
+  hasValue: true;
+  maskedValue: string;
+  fingerprint: string;
+  length: number;
+  keyVersion: number;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy: string;
+  vercelSyncStatus: "not_synced" | "synced" | "sync_failed";
+  vercelSyncedAt: number | null;
+  vercelSyncError?: string;
+}
+
+export interface ConfigVersionEntry {
+  id: string;
+  section: "globalConfig" | "featureFlags" | "maintenance" | "providerConfig" | "modelRegistry";
+  version: number;
+  savedAt: number;
+  savedBy: string;
+  data: Record<string, unknown>;
+}
+
 

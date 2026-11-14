@@ -3,6 +3,7 @@ import { checkRate, consumeDaily, recordGenerationTelemetry, recordUsageMetric }
 import { readEnv } from "@/server/env";
 import { ProviderError, synthesize } from "@/server/providers";
 import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 import { TtsBodySchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
@@ -11,9 +12,10 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
-    const e = readEnv();
     const ctx = await requireAuthContext(req);
     const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
+    const e = readEnv();
     const effectiveFeatures = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
 
     if (runtimeCfg.maintenance.enabled && !ctx.isOwner) {
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
     if (!effectiveFeatures.tts) {
       throw new ApiError(403, "feature_disabled", "Text-to-speech is disabled by the administrator.");
     }
-    if (!e.geminiKey) {
+    if (!(e.geminiTtsKey || e.geminiKey)) {
       throw new ApiError(503, "tts_unavailable", "Server voice is not configured.");
     }
 

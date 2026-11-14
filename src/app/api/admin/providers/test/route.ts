@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { recordAuditLog } from "@/server/adminAudit";
-import { ApiError, requireAdmin } from "@/server/firebaseAdmin";
+import { ApiError, assertSameOrigin, requireAdmin } from "@/server/firebaseAdmin";
 import { testProviderConnectivity } from "@/server/providers";
 import { recordProviderFailure, recordProviderSuccess } from "@/server/nexo/healthRegistry";
+import { getRuntimeConfig } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,11 +15,15 @@ const BodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     const parsed = BodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(400, "bad_request", "Specify provider: 'gemini' or 'openai-compatible'.");
     }
+
+    const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
 
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 10_000);

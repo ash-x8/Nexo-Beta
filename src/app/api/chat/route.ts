@@ -22,6 +22,7 @@ import {
   type ProviderMessage
 } from "@/server/providers";
 import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 import { webSearch } from "@/server/search";
 import { systemPrompt } from "@/server/prompt";
 import { ALLOWED_ATTACHMENT_MIME, ChatBodySchema } from "@/lib/schemas";
@@ -41,8 +42,9 @@ export async function POST(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
     const uid = ctx.uid;
-    const e = readEnv();
     const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
+    const e = readEnv();
     const g = runtimeCfg.globalConfig;
     const effectiveFeatures = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
 

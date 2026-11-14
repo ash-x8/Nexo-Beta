@@ -6,6 +6,7 @@ import { claimRequestId } from "@/server/nexo/healthRegistry";
 import { generateUnifiedImage } from "@/server/nexo/imageEngine";
 import { ProviderError } from "@/server/providers";
 import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export async function POST(req: Request) {
     const ctx = await requireAuthContext(req);
     const uid = ctx.uid;
     const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
     const g = runtimeCfg.globalConfig;
     const effectiveFeatures = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
 

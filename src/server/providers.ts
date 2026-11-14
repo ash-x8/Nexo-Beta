@@ -367,13 +367,14 @@ export async function synthesize(
   overrides?: { ttsModel?: string; ttsVoice?: string }
 ): Promise<SynthesizedAudio> {
   const env = readEnv();
-  if (!env.geminiKey) throw new ProviderError("tts_unavailable", "Server voice needs GEMINI_API_KEY.");
+  const ttsKey = env.geminiTtsKey || env.geminiKey;
+  if (!ttsKey) throw new ProviderError("tts_unavailable", "Server voice needs GEMINI_API_KEY.");
   const ttsModel = overrides?.ttsModel || env.geminiTtsModel;
   const ttsVoice = overrides?.ttsVoice || env.geminiTtsVoice;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ttsModel)}:generateContent`;
   const res = await post(
     url,
-    { "x-goog-api-key": env.geminiKey },
+    { "x-goog-api-key": ttsKey },
     {
       contents: [{ parts: [{ text }] }],
       generationConfig: {

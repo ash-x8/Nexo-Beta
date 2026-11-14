@@ -8,7 +8,7 @@ import { adminApi, ApiClientError, fetchSession } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 
 function AdminGate() {
-  const { user, loading, configured, signIn, logout, getToken } = useAuth();
+  const { user, loading, configured, signIn, reauthenticate, logout, getToken } = useAuth();
   const [checking, setChecking] = useState(false);
   const [denied, setDenied] = useState<string | null>(null);
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
@@ -120,7 +120,14 @@ function AdminGate() {
     );
   }
 
-  return <AdminDashboard initialOverview={overview} getToken={getToken} onLogout={logout} />;
+  return (
+    <AdminDashboard
+      initialOverview={overview}
+      getToken={getToken}
+      onReauthenticate={reauthenticate}
+      onLogout={logout}
+    />
+  );
 }
 
 export default function AdminPage() {

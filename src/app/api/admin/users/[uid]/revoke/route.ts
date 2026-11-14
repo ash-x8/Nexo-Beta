@@ -1,11 +1,12 @@
 import { recordAuditLog } from "@/server/adminAudit";
-import { adminAuth, ApiError, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
+import { adminAuth, ApiError, assertSameOrigin, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request, { params }: { params: { uid: string } }) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to revoke user tokens.");

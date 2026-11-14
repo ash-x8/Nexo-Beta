@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { recordAuditLog } from "@/server/adminAudit";
-import { adminDb, ApiError, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
+import { adminDb, ApiError, assertSameOrigin, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 import { isFreeEligibleModel } from "@/server/modelsRegistry";
 import {
   buildDefaultSnapshot,
   getRuntimeConfig,
-  invalidateRuntimeConfigCache
+  invalidateRuntimeConfigCache,
+  recordConfigVersion
 } from "@/server/runtimeConfig";
+import { invalidateRuntimeSecretsCache, loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 import {
   FeatureFlagsUpdateSchema,
   GlobalConfigUpdateSchema,
@@ -48,6 +50,7 @@ export async function GET(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to persist runtime settings.");
@@ -79,7 +82,15 @@ export async function PUT(req: Request) {
         );
       }
       await db.doc("system/globalConfig").set(next, { merge: true });
+      await recordConfigVersion({
+        section: "globalConfig",
+        version: next.version,
+        savedBy: admin.uid,
+        data: next as unknown as Record<string, unknown>
+      });
       invalidateRuntimeConfigCache();
+      invalidateRuntimeSecretsCache();
+      await loadRuntimeSecretsIntoOverlay(true, next.secretResolutionMode || "runtime_first");
       await recordAuditLog({
         actorUid: admin.uid,
         action: "update_global_config",
@@ -198,6 +209,7 @@ export async function PUT(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to reset runtime settings.");
@@ -210,6 +222,12 @@ export async function POST(req: Request) {
     const section = parsed.data.section;
     const payload = { ...defaults[section], updatedAt: Date.now() };
     await adminDb().doc(`system/${section}`).set(payload);
+    await recordConfigVersion({
+      section,
+      version: 1,
+      savedBy: admin.uid,
+      data: payload as unknown as Record<string, unknown>
+    });
     invalidateRuntimeConfigCache();
     await recordAuditLog({
       actorUid: admin.uid,

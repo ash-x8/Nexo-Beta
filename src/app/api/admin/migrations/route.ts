@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordAuditLog } from "@/server/adminAudit";
-import { adminDb, ApiError, getOwnerAllowlist, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
+import { adminDb, ApiError, assertSameOrigin, getOwnerAllowlist, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 import { buildDefaultSnapshot, invalidateRuntimeConfigCache } from "@/server/runtimeConfig";
 
 export const runtime = "nodejs";
@@ -12,6 +12,7 @@ const MigrationSchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to run migrations.");

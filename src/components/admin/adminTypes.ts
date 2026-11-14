@@ -16,10 +16,13 @@ import type {
 export type AdminSectionId =
   | "overview"
   | "global"
-  | "users"
-  | "analytics"
+  | "vercel"
+  | "secrets"
   | "providers"
   | "models"
+  | "users"
+  | "user-usage"
+  | "analytics"
   | "security"
   | "maintenance"
   | "features"
@@ -62,6 +65,8 @@ export interface AdminOverviewResponse {
   system: {
     adminCredentialsReady: boolean;
     authConfigured: boolean;
+    encryptionReady?: boolean;
+    vercelConfigured?: boolean;
     configuredProviders: string[];
     tavilyConfigured: boolean;
     missingKeys: string[];
@@ -96,11 +101,18 @@ export interface SecurityPostureResponse {
     adminCredentialsReady: boolean;
     firebaseAuthConfigured: boolean;
     appCheckConfigured: boolean;
+    encryptionMasterKeyConfigured?: boolean;
+    runtimeSecretOverlayCount?: number;
+    vercelIntegrationConfigured?: boolean;
+    ownerAllowlistCount?: number;
     freeOnlyMode: boolean;
     rateLimitPerMinute: number;
     dailyRequestLimit: number;
+    maxInputChars?: number;
+    maxAttachmentMb?: number;
     cspEnabled: boolean;
     hstsEnabled: boolean;
+    csrfOriginCheckEnabled?: boolean;
     serverSideKeysOnly: boolean;
     firestoreRulesHardened: boolean;
     geminiKeyConfigured: boolean;

@@ -56,6 +56,7 @@ export function buildDefaultSnapshot(): RuntimeConfigSnapshot {
       rateLimitPerMinute: e.perMinute,
       dailyRequestLimit: e.dailyLimit,
       dailyTtsLimit: e.dailyTtsLimit,
+      secretResolutionMode: "runtime_first",
       version: 1,
       updatedAt: now,
       updatedBy: "system_env"
@@ -263,3 +264,55 @@ export function resolveEffectiveFeatures(
   }
   return out;
 }
+
+export type VersionableConfigSection =
+  | "globalConfig"
+  | "featureFlags"
+  | "maintenance"
+  | "providerConfig"
+  | "modelRegistry";
+
+export async function recordConfigVersion(opts: {
+  section: VersionableConfigSection;
+  version: number;
+  savedBy: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  if (!hasAdminCredentials()) return;
+  try {
+    await adminDb()
+      .collection("system/configHistory/entries")
+      .add({
+        section: opts.section,
+        version: opts.version,
+        savedBy: opts.savedBy,
+        savedAt: Date.now(),
+        data: opts.data
+      });
+  } catch {
+    /* best-effort config versioning */
+  }
+}
+
+export async function listConfigVersions(section?: VersionableConfigSection, limitCount = 25) {
+  if (!hasAdminCredentials()) return [];
+  const snap = await adminDb()
+    .collection("system/configHistory/entries")
+    .orderBy("savedAt", "desc")
+    .limit(Math.min(Math.max(1, limitCount), 50))
+    .get();
+
+  const items = snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as {
+      section: VersionableConfigSection;
+      version: number;
+      savedAt: number;
+      savedBy: string;
+      data: Record<string, unknown>;
+    })
+  }));
+
+  return section ? items.filter((i) => i.section === section) : items;
+}
+

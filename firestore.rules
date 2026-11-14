@@ -92,11 +92,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Global runtime configuration & admin audit/security records are strictly server/Admin-SDK managed.
+    // Global runtime configuration, admin audit/security records, and encrypted runtime secrets are strictly server/Admin-SDK managed.
     match /system/{document=**} {
       allow read, write: if false;
     }
     match /admin/{document=**} {
+      allow read, write: if false;
+    }
+    match /secrets/{document=**} {
       allow read, write: if false;
     }
 

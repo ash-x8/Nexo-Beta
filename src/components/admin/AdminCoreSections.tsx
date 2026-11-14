@@ -1,8 +1,21 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Activity, CheckCircle2, Cpu, RefreshCw, RotateCcw, Save, ShieldAlert, Wrench } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  CheckCircle2,
+  Cpu,
+  Eye,
+  History,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  ShieldAlert,
+  Wrench,
+  X
+} from "lucide-react";
 import { adminApi } from "@/lib/api";
 import type {
+  ConfigVersionEntry,
   FeatureFlags,
   FeatureKey,
   GlobalConfig,
@@ -136,10 +149,55 @@ export function OverviewSection({ overview }: { overview: AdminOverviewResponse 
 export function GlobalSettingsSection({ overview, token, onRefresh, onToast, onConfirm }: CommonProps) {
   const [draft, setDraft] = useState<GlobalConfig>(overview.runtime.globalConfig);
   const [saving, setSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [versions, setVersions] = useState<ConfigVersionEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await adminApi.getConfigHistory(token, "globalConfig");
+      setVersions(res.versions);
+    } catch {
+      /* optional in unconfigured sandbox */
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
     setDraft(overview.runtime.globalConfig);
   }, [overview.runtime.globalConfig]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
+
+  const diffEntries = useMemo(() => {
+    const base = overview.runtime.globalConfig;
+    const keys: Array<keyof GlobalConfig> = [
+      "appName",
+      "brandingSubtitle",
+      "defaultTheme",
+      "defaultLanguage",
+      "allowLanguageSwitch",
+      "allowRegistration",
+      "defaultProvider",
+      "defaultModel",
+      "freeOnlyMode",
+      "aiTemperature",
+      "dailyRequestLimit",
+      "dailyTtsLimit",
+      "rateLimitPerMinute",
+      "maxInputChars",
+      "maxHistoryMessages",
+      "maxAttachmentMb",
+      "secretResolutionMode"
+    ];
+    return keys
+      .filter((k) => base[k] !== draft[k])
+      .map((k) => ({ key: k, from: String(base[k] ?? ""), to: String(draft[k] ?? "") }));
+  }, [overview.runtime.globalConfig, draft]);
 
   const persistSave = async (next: GlobalConfig) => {
     setSaving(true);
@@ -159,9 +217,12 @@ export function GlobalSettingsSection({ overview, token, onRefresh, onToast, onC
         dailyTtsLimit: Number(next.dailyTtsLimit),
         rateLimitPerMinute: Number(next.rateLimitPerMinute),
         maxInputChars: Number(next.maxInputChars),
-        maxHistoryMessages: Number(next.maxHistoryMessages)
+        maxHistoryMessages: Number(next.maxHistoryMessages),
+        maxAttachmentMb: Number(next.maxAttachmentMb),
+        secretResolutionMode: next.secretResolutionMode || "runtime_first"
       });
-      await onRefresh();
+      setShowPreview(false);
+      await Promise.all([onRefresh(), loadHistory()]);
       onToast("ok", "Global configuration saved and applied immediately.");
     } catch (e) {
       onToast("err", (e as Error).message);
@@ -194,8 +255,29 @@ export function GlobalSettingsSection({ overview, token, onRefresh, onToast, onC
         setSaving(true);
         try {
           await adminApi.resetConfig(token, "globalConfig");
-          await onRefresh();
+          await Promise.all([onRefresh(), loadHistory()]);
           onToast("ok", "Global settings restored to defaults.");
+        } catch (e) {
+          onToast("err", (e as Error).message);
+        } finally {
+          setSaving(false);
+        }
+      }
+    });
+  };
+
+  const handleRollback = (v: ConfigVersionEntry) => {
+    onConfirm({
+      title: `Rollback Global Settings to v${v.version}?`,
+      body: `Restores configuration snapshot saved at ${new Date(v.savedAt).toLocaleString()} and creates a new version entry.`,
+      confirmLabel: `Rollback to v${v.version}`,
+      danger: true,
+      onConfirm: async () => {
+        setSaving(true);
+        try {
+          await adminApi.rollbackConfig(token, v.id);
+          await Promise.all([onRefresh(), loadHistory()]);
+          onToast("ok", `Rolled back global settings to snapshot v${v.version}.`);
         } catch (e) {
           onToast("err", (e as Error).message);
         } finally {
@@ -367,6 +449,37 @@ export function GlobalSettingsSection({ overview, token, onRefresh, onToast, onC
             onChange={(e) => setDraft({ ...draft, maxHistoryMessages: Number(e.target.value) })}
           />
         </div>
+
+        <div className="nx-admin-field">
+          <label htmlFor="gc-attach">Max Attachment Size (MB)</label>
+          <input
+            id="gc-attach"
+            type="number"
+            min={1}
+            max={25}
+            className="nx-input tabular"
+            value={draft.maxAttachmentMb}
+            onChange={(e) => setDraft({ ...draft, maxAttachmentMb: Number(e.target.value) })}
+          />
+        </div>
+
+        <div className="nx-admin-field">
+          <label htmlFor="gc-secret-mode">Secret Precedence Policy</label>
+          <select
+            id="gc-secret-mode"
+            className="nx-select"
+            value={draft.secretResolutionMode || "runtime_first"}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                secretResolutionMode: e.target.value as GlobalConfig["secretResolutionMode"]
+              })
+            }
+          >
+            <option value="runtime_first">Runtime Encrypted Secrets First (No Redeploy Needed)</option>
+            <option value="env_first">Vercel / Process Env Variables First</option>
+          </select>
+        </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -425,12 +538,47 @@ export function GlobalSettingsSection({ overview, token, onRefresh, onToast, onC
         </div>
       </div>
 
+      {showPreview && (
+        <div className="nx-field-card" style={{ borderColor: "var(--accent-blue)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <strong style={{ fontSize: 13.5 }}>Pending Configuration Diff ({diffEntries.length} change{diffEntries.length === 1 ? "" : "s"})</strong>
+            <button type="button" className="nx-tiny-btn" onClick={() => setShowPreview(false)} aria-label="Hide diff">
+              <X size={14} />
+            </button>
+          </div>
+          {diffEntries.length === 0 ? (
+            <p className="nx-field-hint">No unsaved changes detected.</p>
+          ) : (
+            <div className="nx-kv-list">
+              {diffEntries.map((d) => (
+                <div key={d.key} className="nx-kv-row">
+                  <span className="mono">{d.key}</span>
+                  <span className="mono">
+                    <span style={{ color: "var(--text-muted)", textDecoration: "line-through", marginRight: 8 }}>{d.from}</span>
+                    <span style={{ color: "var(--accent-blue)", fontWeight: 600 }}>{d.to}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="nx-admin-actions-bar">
         <button type="button" className="nx-secondary-btn" disabled={saving} onClick={handleReset}>
           <RotateCcw size={15} />
           <span>Reset to Defaults</span>
         </button>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="nx-secondary-btn"
+            disabled={saving}
+            onClick={() => setShowPreview((p) => !p)}
+          >
+            <Eye size={15} />
+            <span>{showPreview ? "Hide Diff" : `Preview Changes (${diffEntries.length})`}</span>
+          </button>
           <button
             type="button"
             className="nx-secondary-btn"
@@ -444,6 +592,59 @@ export function GlobalSettingsSection({ overview, token, onRefresh, onToast, onC
             <span>{saving ? "Saving…" : "Save Changes"}</span>
           </button>
         </div>
+      </div>
+
+      <div style={{ marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--border-hairline)" }}>
+        <div className="nx-admin-card-head" style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <History size={16} color="var(--accent-blue)" />
+            <h3>Configuration Version History & Rollback</h3>
+          </div>
+          <button type="button" className="nx-secondary-btn" disabled={historyLoading} onClick={() => loadHistory()}>
+            <RefreshCw size={13} />
+            <span>Refresh History</span>
+          </button>
+        </div>
+        {versions.length === 0 ? (
+          <p className="nx-field-hint">Version snapshots appear automatically after each saved change.</p>
+        ) : (
+          <div className="nx-table-wrap">
+            <table className="nx-table">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Saved At</th>
+                  <th>Saved By</th>
+                  <th>App / Default Model</th>
+                  <th style={{ textAlign: "right" }}>Rollback</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versions.slice(0, 8).map((v) => (
+                  <tr key={v.id}>
+                    <td className="mono">v{v.version}</td>
+                    <td className="tabular">{new Date(v.savedAt).toLocaleString()}</td>
+                    <td className="mono">{v.savedBy}</td>
+                    <td className="mono">
+                      {String(v.data.appName || "NEXO AI")} · {String(v.data.defaultModel || "—")}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        type="button"
+                        className="nx-secondary-btn"
+                        style={{ minHeight: 30, padding: "2px 10px", fontSize: 12 }}
+                        disabled={saving}
+                        onClick={() => handleRollback(v)}
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1017,6 +1218,7 @@ export function ModelsSection({ overview, token, onRefresh, onToast }: CommonPro
 export function MaintenanceSection({ overview, token, onRefresh, onToast, onConfirm }: CommonProps) {
   const [draft, setDraft] = useState<MaintenanceConfig>(overview.runtime.maintenance);
   const [saving, setSaving] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     setDraft(overview.runtime.maintenance);
@@ -1045,7 +1247,7 @@ export function MaintenanceSection({ overview, token, onRefresh, onToast, onConf
       onConfirm({
         title: draft.enabled ? "Enable Maintenance Mode?" : "Disable Maintenance Mode?",
         body: draft.enabled
-          ? "Regular users will see the Maintenance screen and AI endpoints will return 503. Your verified Owner Super Admin session bypasses maintenance automatically."
+          ? "Regular users will see the Maintenance screen and all AI/voice/memory endpoints will return 503. Your verified Owner Super Admin session bypasses maintenance automatically."
           : "All active users will regain normal access to NEXO AI immediately.",
         confirmLabel: draft.enabled ? "Enable Maintenance" : "Restore Normal Access",
         danger: draft.enabled,
@@ -1072,7 +1274,7 @@ export function MaintenanceSection({ overview, token, onRefresh, onToast, onConf
         <div className="nx-field-row">
           <div>
             <span className="nx-field-label">Enable Global Maintenance Mode</span>
-            <p className="nx-field-hint">Immediately blocks non-owner chat, TTS, and workspace access.</p>
+            <p className="nx-field-hint">Immediately blocks non-owner chat, image studio, transcription, memory, and TTS endpoints.</p>
           </div>
           <button
             type="button"
@@ -1125,7 +1327,11 @@ export function MaintenanceSection({ overview, token, onRefresh, onToast, onConf
           <ShieldAlert size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
           Owner bypass is always enforced server-side.
         </span>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="nx-secondary-btn" onClick={() => setPreviewOpen(true)}>
+            <Eye size={15} />
+            <span>Preview End-User Screen</span>
+          </button>
           <button
             type="button"
             className="nx-secondary-btn"
@@ -1140,6 +1346,28 @@ export function MaintenanceSection({ overview, token, onRefresh, onToast, onConf
           </button>
         </div>
       </div>
+
+      {previewOpen && (
+        <div
+          className="nx-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Maintenance Screen Preview"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div className="nx-confirm-modal" style={{ maxWidth: 460, textAlign: "center", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+            <Wrench size={34} color="var(--status-warn)" />
+            <h3 style={{ fontSize: 20 }}>{draft.title || "Scheduled Maintenance"}</h3>
+            <p>{draft.message || "NEXO AI is undergoing scheduled maintenance. Please check back shortly."}</p>
+            {draft.expectedReturn && (
+              <span className="nx-badge warn">Expected Return: {draft.expectedReturn}</span>
+            )}
+            <button type="button" className="nx-secondary-btn" onClick={() => setPreviewOpen(false)}>
+              Close Preview
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

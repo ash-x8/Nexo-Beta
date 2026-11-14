@@ -13,6 +13,7 @@ import { claimRequestId } from "@/server/nexo/healthRegistry";
 import { executeUnifiedNexoStream } from "@/server/nexo/orchestrator";
 import { ProviderError } from "@/server/providers";
 import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,8 +32,9 @@ export async function POST(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
     const uid = ctx.uid;
-    const e = readEnv();
     const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
+    const e = readEnv();
     const g = runtimeCfg.globalConfig;
     const effectiveFeatures = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
 

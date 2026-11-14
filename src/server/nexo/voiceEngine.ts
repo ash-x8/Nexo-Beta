@@ -57,12 +57,14 @@ export async function synthesizeUnifiedSpeech(opts: {
   const ttsVoice = gEntry?.ttsVoice || env.geminiTtsVoice;
   const started = Date.now();
 
-  if (gEntry?.enabled !== false && env.geminiKey) {
+  const ttsKey = env.geminiTtsKey || env.geminiKey;
+  if (gEntry?.enabled !== false && ttsKey) {
     try {
       const out = await synthesizeGeminiTts({
         text: opts.text,
         model: ttsModel,
-        voiceName: ttsVoice
+        voiceName: ttsVoice,
+        apiKeyOverride: ttsKey
       });
       recordProviderSuccess("gemini", { latencyMs: Date.now() - started });
       return { ...out, providerUsed: "gemini" };

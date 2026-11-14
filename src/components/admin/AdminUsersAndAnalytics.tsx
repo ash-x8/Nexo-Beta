@@ -1,13 +1,13 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { KeyRound, RefreshCw, Search, ShieldOff, UserCheck, UserX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BarChart3, KeyRound, RefreshCw, Search, ShieldOff, UserCheck, UserX } from "lucide-react";
 import { adminApi } from "@/lib/api";
 import type { AccountStatus, FeatureKey } from "@/lib/types";
-import { DailyBarChart } from "./AdminChartsAndConfirm";
+import { BreakdownCard, DailyBarChart } from "./AdminChartsAndConfirm";
 import type { AdminOverviewResponse, AdminUserRow, ConfirmPromptState } from "./adminTypes";
 
 interface Props {
-  mode: "users" | "analytics";
+  mode: "users" | "user-usage" | "analytics";
   overview: AdminOverviewResponse;
   token: string;
   onRefreshOverview: () => Promise<void>;
@@ -20,6 +20,7 @@ const OVERRIDE_KEYS: { key: FeatureKey; label: string }[] = [
   { key: "voiceInput", label: "Voice Input" },
   { key: "tts", label: "TTS Voice" },
   { key: "attachments", label: "Attachments" },
+  { key: "imageGeneration", label: "Image Studio" },
   { key: "webSearch", label: "Web Search" },
   { key: "personalMemory", label: "Memory" }
 ];
@@ -36,6 +37,8 @@ export function UsersAndAnalyticsSection({
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [modelFilter, setModelFilter] = useState("all");
   const [days, setDays] = useState(30);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -92,6 +95,42 @@ export function UsersAndAnalyticsSection({
       void loadDetail(selectedUid);
     }
   }, [selectedUid, loadDetail]);
+
+  const availableProviders = useMemo(() => {
+    const keys = new Set<string>(Object.keys(overview.byProvider || {}));
+    for (const u of users) {
+      for (const p of Object.keys(u.usage.byProvider || {})) keys.add(p);
+    }
+    return Array.from(keys).sort();
+  }, [overview.byProvider, users]);
+
+  const availableModels = useMemo(() => {
+    const keys = new Set<string>(Object.keys(overview.byModel || {}));
+    for (const u of users) {
+      for (const m of Object.keys(u.usage.byModel || {})) keys.add(m);
+    }
+    return Array.from(keys).sort();
+  }, [overview.byModel, users]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (providerFilter !== "all" && !(u.usage.byProvider?.[providerFilter] > 0)) return false;
+      if (modelFilter !== "all" && !(u.usage.byModel?.[modelFilter] > 0)) return false;
+      return true;
+    });
+  }, [users, providerFilter, modelFilter]);
+
+  const filteredProviderBreakdown = useMemo(() => {
+    if (providerFilter === "all") return overview.byProvider;
+    const count = overview.byProvider[providerFilter] || 0;
+    return count > 0 ? { [providerFilter]: count } : {};
+  }, [overview.byProvider, providerFilter]);
+
+  const filteredModelBreakdown = useMemo(() => {
+    if (modelFilter === "all") return overview.byModel;
+    const count = overview.byModel[modelFilter] || 0;
+    return count > 0 ? { [modelFilter]: count } : {};
+  }, [overview.byModel, modelFilter]);
 
   const applyStatus = (target: AdminUserRow, nextStatus: AccountStatus) => {
     const isSelf = target.uid === overview.admin.uid;
@@ -153,7 +192,6 @@ export function UsersAndAnalyticsSection({
   const handleOverrideToggle = async (target: AdminUserRow, key: FeatureKey, currentVal: boolean | undefined) => {
     setMutating(true);
     try {
-      // Cycle: inherit (null) -> false -> true -> inherit (null)
       const nextVal = currentVal === undefined ? false : currentVal === false ? true : null;
       await adminApi.patchUser(token, target.uid, {
         featureOverrides: { [key]: nextVal }
@@ -167,9 +205,119 @@ export function UsersAndAnalyticsSection({
     }
   };
 
+  const dailyRequestCap = overview.runtime.globalConfig.dailyRequestLimit;
+
+  if (mode === "analytics") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="nx-admin-card">
+          <div className="nx-admin-card-head">
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <BarChart3 size={18} color="var(--accent-blue)" />
+                <h2>Global Usage Analytics</h2>
+              </div>
+              <p className="nx-field-hint">
+                {overview.system.tokenAccuracyNote} Private user chat prompts and message bodies are never exposed here.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select
+                className="nx-select"
+                style={{ width: 150, minHeight: 38 }}
+                value={providerFilter}
+                onChange={(e) => setProviderFilter(e.target.value)}
+                aria-label="Filter provider analytics"
+              >
+                <option value="all">All Providers</option>
+                {availableProviders.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <select
+                className="nx-select"
+                style={{ width: 180, minHeight: 38 }}
+                value={modelFilter}
+                onChange={(e) => setModelFilter(e.target.value)}
+                aria-label="Filter model analytics"
+              >
+                <option value="all">All Models</option>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <button type="button" className="nx-secondary-btn" onClick={() => onRefreshOverview()}>
+                <RefreshCw size={14} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="nx-kpi-grid">
+            <div className="nx-kpi-card">
+              <div className="nx-kpi-label"><span>Exact Requests</span><span className="nx-badge ok">Exact</span></div>
+              <div className="nx-kpi-value">{overview.summary.requestsWindow.toLocaleString()}</div>
+              <div className="nx-kpi-sub">Server-verified request counter</div>
+            </div>
+            <div className="nx-kpi-card">
+              <div className="nx-kpi-label"><span>Estimated Tokens</span><span className="nx-badge warn">Estimated</span></div>
+              <div className="nx-kpi-value">{overview.summary.estimatedTokensWindow.toLocaleString()}</div>
+              <div className="nx-kpi-sub">~4 chars/token approximation</div>
+            </div>
+            <div className="nx-kpi-card">
+              <div className="nx-kpi-label"><span>Audio & Vision</span><span className="nx-badge ok">Exact</span></div>
+              <div className="nx-kpi-value">
+                {(overview.summary.ttsWindow + overview.summary.voiceWindow + (overview.summary.imageRequestsWindow ?? 0)).toLocaleString()}
+              </div>
+              <div className="nx-kpi-sub">
+                {overview.summary.ttsWindow} TTS · {overview.summary.voiceWindow} voice · {overview.summary.imageRequestsWindow ?? 0} images
+              </div>
+            </div>
+            <div className="nx-kpi-card">
+              <div className="nx-kpi-label"><span>Fallbacks & Failures</span><span className="nx-badge ok">Exact</span></div>
+              <div className="nx-kpi-value">{overview.summary.fallbackCountWindow.toLocaleString()}</div>
+              <div className="nx-kpi-sub">
+                {overview.summary.failedRequestsWindow} failed · {overview.summary.rateLimitHitsWindow} rate limited
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="nx-admin-grid-2">
+          <DailyBarChart
+            title="Daily AI Requests (Server Exact)"
+            points={overview.daily.map((d) => ({
+              label: d.day,
+              value: d.requests,
+              hint: `${d.day}: ${d.requests} requests, ${d.failedRequests} failed`
+            }))}
+          />
+          <DailyBarChart
+            title="Daily Token Throughput (Estimated)"
+            variant="alt"
+            points={overview.daily.map((d) => ({
+              label: d.day,
+              value: d.estimatedInputTokens + d.estimatedOutputTokens,
+              hint: `${d.day}: ~${d.estimatedInputTokens.toLocaleString()} in / ~${d.estimatedOutputTokens.toLocaleString()} out`
+            }))}
+          />
+        </div>
+
+        <div className="nx-admin-grid-2">
+          <BreakdownCard title="Requests by Provider" entries={filteredProviderBreakdown} />
+          <BreakdownCard title="Requests by Model" entries={filteredModelBreakdown} />
+        </div>
+
+        {overview.byTask && Object.keys(overview.byTask).length > 0 && (
+          <BreakdownCard title="Requests by Capability (NEXO Auto-Router)" entries={overview.byTask} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {mode === "analytics" && (
+      {mode === "user-usage" && (
         <div className="nx-admin-grid-2">
           <DailyBarChart
             title={`Platform Requests (${days}d Window)`}
@@ -190,9 +338,9 @@ export function UsersAndAnalyticsSection({
       <div className="nx-admin-card">
         <div className="nx-admin-card-head">
           <div>
-            <h2>{mode === "users" ? "Users & Account Access" : "Per-User Usage Analytics"}</h2>
+            <h2>{mode === "users" ? "Users & Account Access" : "Individual User Usage Breakdown"}</h2>
             <p className="nx-field-hint">
-              Aggregated from Firebase Auth and server-recorded usage counters. Private chat messages remain isolated.
+              Aggregated from Firebase Auth and server-recorded usage counters. Private user chat messages remain isolated.
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -215,7 +363,7 @@ export function UsersAndAnalyticsSection({
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          <div className="nx-sidebar-search" style={{ margin: 0, flex: "1 1 240px", minHeight: 40 }}>
+          <div className="nx-sidebar-search" style={{ margin: 0, flex: "1 1 220px", minHeight: 40 }}>
             <Search size={14} color="var(--text-muted)" />
             <input
               type="search"
@@ -226,7 +374,7 @@ export function UsersAndAnalyticsSection({
           </div>
           <select
             className="nx-select"
-            style={{ width: 160, minHeight: 40 }}
+            style={{ width: 145, minHeight: 40 }}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter user status"
@@ -236,6 +384,34 @@ export function UsersAndAnalyticsSection({
             <option value="suspended">Suspended</option>
             <option value="disabled">Disabled</option>
           </select>
+          {mode === "user-usage" && (
+            <>
+              <select
+                className="nx-select"
+                style={{ width: 145, minHeight: 40 }}
+                value={providerFilter}
+                onChange={(e) => setProviderFilter(e.target.value)}
+                aria-label="Filter by provider"
+              >
+                <option value="all">All Providers</option>
+                {availableProviders.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <select
+                className="nx-select"
+                style={{ width: 175, minHeight: 40 }}
+                value={modelFilter}
+                onChange={(e) => setModelFilter(e.target.value)}
+                aria-label="Filter by model"
+              >
+                <option value="all">All Models</option>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -243,7 +419,7 @@ export function UsersAndAnalyticsSection({
             <div className="nx-skeleton-bubble assistant short" />
             <div className="nx-skeleton-bubble assistant short" />
           </div>
-        ) : users.length === 0 ? (
+        ) : filteredUsers.length === 0 ? (
           <p className="nx-field-hint">
             No user accounts matched or Admin credentials are not configured in this environment.
           </p>
@@ -253,17 +429,31 @@ export function UsersAndAnalyticsSection({
               <thead>
                 <tr>
                   <th>User</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Requests</th>
-                  <th>TTS / Voice</th>
-                  <th>Est. Tokens</th>
-                  <th>Last Active</th>
+                  {mode === "users" ? (
+                    <>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Requests</th>
+                      <th>TTS / Voice</th>
+                      <th>Est. Tokens</th>
+                      <th>Last Active</th>
+                    </>
+                  ) : (
+                    <>
+                      <th>Today / Month / Total</th>
+                      <th>Remaining Quota</th>
+                      <th>In / Out Est. Tokens</th>
+                      <th>TTS / Voice</th>
+                      <th>Rate Limits / Failures</th>
+                      <th>Providers</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => {
+                {filteredUsers.map((u) => {
                   const isSelected = u.uid === selectedUid;
+                  const remainingToday = Math.max(0, dailyRequestCap - u.usage.todayRequests);
                   return (
                     <tr
                       key={u.uid}
@@ -281,26 +471,53 @@ export function UsersAndAnalyticsSection({
                           </span>
                         </div>
                       </td>
-                      <td>
-                        <span className={`nx-status-text ${u.role === "SUPER_ADMIN" ? "ok" : ""}`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`nx-status-text ${u.status === "active" ? "ok" : u.status === "suspended" ? "warn" : "err"}`}>
-                          {u.status}
-                        </span>
-                      </td>
-                      <td className="tabular">{u.usage.totalRequests.toLocaleString()}</td>
-                      <td className="tabular">
-                        {u.usage.totalTts} / {u.usage.totalVoiceRequests}
-                      </td>
-                      <td className="tabular">
-                        {(u.usage.estimatedInputTokens + u.usage.estimatedOutputTokens).toLocaleString()}
-                      </td>
-                      <td className="tabular">
-                        {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleDateString() : "—"}
-                      </td>
+                      {mode === "users" ? (
+                        <>
+                          <td>
+                            <span className={`nx-status-text ${u.role === "SUPER_ADMIN" ? "ok" : ""}`}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`nx-status-text ${u.status === "active" ? "ok" : u.status === "suspended" ? "warn" : "err"}`}>
+                              {u.status}
+                            </span>
+                          </td>
+                          <td className="tabular">{u.usage.totalRequests.toLocaleString()}</td>
+                          <td className="tabular">
+                            {u.usage.totalTts} / {u.usage.totalVoiceRequests}
+                          </td>
+                          <td className="tabular">
+                            {(u.usage.estimatedInputTokens + u.usage.estimatedOutputTokens).toLocaleString()}
+                          </td>
+                          <td className="tabular">
+                            {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleDateString() : "—"}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="tabular">
+                            {u.usage.todayRequests} / {u.usage.monthRequests} / <strong>{u.usage.totalRequests}</strong>
+                          </td>
+                          <td className="tabular">
+                            <span className={`nx-badge ${remainingToday === 0 ? "err" : remainingToday < 15 ? "warn" : "ok"}`}>
+                              {remainingToday} left today
+                            </span>
+                          </td>
+                          <td className="tabular">
+                            ~{u.usage.estimatedInputTokens.toLocaleString()} / ~{u.usage.estimatedOutputTokens.toLocaleString()}
+                          </td>
+                          <td className="tabular">
+                            {u.usage.totalTts} / {u.usage.totalVoiceRequests}
+                          </td>
+                          <td className="tabular">
+                            {u.usage.rateLimitHits} / {u.usage.failedRequests}
+                          </td>
+                          <td className="mono">
+                            {Object.keys(u.usage.byProvider).join(", ") || "—"}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}
@@ -310,7 +527,20 @@ export function UsersAndAnalyticsSection({
         )}
       </div>
 
-      {selectedUser && (
+      {selectedUser && mode === "user-usage" && (
+        <div className="nx-admin-grid-2">
+          <BreakdownCard
+            title={`Selected User · Requests by Provider (${selectedUser.email || selectedUser.uid})`}
+            entries={selectedUser.usage.byProvider}
+          />
+          <BreakdownCard
+            title={`Selected User · Requests by Model (${selectedUser.email || selectedUser.uid})`}
+            entries={selectedUser.usage.byModel}
+          />
+        </div>
+      )}
+
+      {selectedUser && mode === "users" && (
         <div className="nx-admin-card">
           <div className="nx-admin-card-head">
             <div>

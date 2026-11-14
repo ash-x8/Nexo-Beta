@@ -1,14 +1,16 @@
 import { authConfigured, configuredProviders, readEnv } from "@/server/env";
 import { DEVELOPER_INFO } from "@/server/developerProfile";
 import { getActivePublicAnnouncements, getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 import type { PublicConfig } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 /** Public, secret-free runtime configuration & capabilities. */
 export async function GET() {
-  const e = readEnv();
   const runtime = await getRuntimeConfig();
+  await loadRuntimeSecretsIntoOverlay(false, runtime.globalConfig.secretResolutionMode || "runtime_first");
+  const e = readEnv();
   const g = runtime.globalConfig;
   const pCfg = runtime.providerConfig;
   const envProviders = configuredProviders();

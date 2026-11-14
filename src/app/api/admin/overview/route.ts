@@ -1,10 +1,11 @@
 import { listSecurityEvents } from "@/server/adminAudit";
 import { getSystemDailyMetrics, listUsersWithUsage } from "@/server/analytics";
-import { authConfigured, configuredProviders, missingConfigKeys, readEnv } from "@/server/env";
+import { authConfigured, configuredProviders, encryptionKeyConfigured, missingConfigKeys, readEnv, vercelConfigured } from "@/server/env";
 import { ApiError, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 import { buildModelCatalog, getOverallProviderHealth } from "@/server/modelsRegistry";
 import { getProviderTelemetrySnapshot } from "@/server/nexo/healthRegistry";
 import { getRuntimeConfig } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function GET(req: Request) {
       listSecurityEvents(25)
     ]);
 
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
     const e = readEnv();
     const providerId = runtimeCfg.globalConfig.defaultProvider || e.provider;
     const defaultModel = runtimeCfg.globalConfig.defaultModel || e.geminiModel;
@@ -74,6 +76,8 @@ export async function GET(req: Request) {
       system: {
         adminCredentialsReady: hasAdminCredentials(),
         authConfigured: authConfigured(),
+        encryptionReady: encryptionKeyConfigured(),
+        vercelConfigured: vercelConfigured().configured,
         configuredProviders: configuredProviders(),
         tavilyConfigured: !!e.tavilyKey,
         missingKeys: missingConfigKeys(),

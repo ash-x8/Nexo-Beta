@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Activity,
   Database,
@@ -81,9 +81,25 @@ export function SecurityCenterSection({ token, onToast }: Pick<OpsProps, "token"
               </span>
             </div>
             <div className="nx-kv-row">
-              <span className="nx-kv-key">Firebase Authentication</span>
+              <span className="nx-kv-key">AES-256-GCM Master Encryption Key</span>
+              <span className={`nx-status-text ${p.encryptionMasterKeyConfigured ? "ok" : "err"}`}>
+                {p.encryptionMasterKeyConfigured ? "Configured (Zero Plaintext)" : "Unconfigured"}
+              </span>
+            </div>
+            <div className="nx-kv-row">
+              <span className="nx-kv-key">Runtime Secret Overlay Keys</span>
+              <span className="nx-kv-val tabular">{p.runtimeSecretOverlayCount ?? 0} active in memory</span>
+            </div>
+            <div className="nx-kv-row">
+              <span className="nx-kv-key">Vercel API Bootstrap</span>
+              <span className={`nx-status-text ${p.vercelIntegrationConfigured ? "ok" : "warn"}`}>
+                {p.vercelIntegrationConfigured ? "Connected" : "Unconfigured"}
+              </span>
+            </div>
+            <div className="nx-kv-row">
+              <span className="nx-kv-key">Firebase Authentication & Owner Allowlist</span>
               <span className={`nx-status-text ${p.firebaseAuthConfigured ? "ok" : "err"}`}>
-                {p.firebaseAuthConfigured ? "Configured" : "Incomplete"}
+                {p.firebaseAuthConfigured ? `Configured (${p.ownerAllowlistCount ?? 1} Owner)` : "Incomplete"}
               </span>
             </div>
             <div className="nx-kv-row">
@@ -92,22 +108,28 @@ export function SecurityCenterSection({ token, onToast }: Pick<OpsProps, "token"
                 {p.appCheckConfigured ? "Site key configured" : "Not configured"}
               </span>
             </div>
-            <div className="nx-kv-row">
-              <span className="nx-kv-key">Strict Free-Only Guardrail</span>
-              <span className={`nx-status-text ${p.freeOnlyMode ? "ok" : "warn"}`}>
-                {p.freeOnlyMode ? "Enforced" : "Disabled"}
-              </span>
-            </div>
           </div>
 
           <div className="nx-kv-list">
             <div className="nx-kv-row">
-              <span className="nx-kv-key">CSP & HSTS Headers</span>
-              <span className="nx-status-text ok">Active (next.config.mjs)</span>
+              <span className="nx-kv-key">CSP, HSTS & Same-Origin CSRF</span>
+              <span className="nx-status-text ok">Active (Headers + Admin Origin Check)</span>
             </div>
             <div className="nx-kv-row">
               <span className="nx-kv-key">Firestore RBAC Rules</span>
-              <span className="nx-status-text ok">Default-Deny + Server-Only system/*</span>
+              <span className="nx-status-text ok">Default-Deny + Server-Only system/* & secrets/*</span>
+            </div>
+            <div className="nx-kv-row">
+              <span className="nx-kv-key">Strict Free-Only Model Guardrail</span>
+              <span className={`nx-status-text ${p.freeOnlyMode ? "ok" : "warn"}`}>
+                {p.freeOnlyMode ? "Enforced" : "Disabled"}
+              </span>
+            </div>
+            <div className="nx-kv-row">
+              <span className="nx-kv-key">Rate & Payload Guardrails</span>
+              <span className="nx-kv-val tabular">
+                {p.rateLimitPerMinute}/min · {p.dailyRequestLimit}/day · {p.maxInputChars ?? 6000} chars · {p.maxAttachmentMb ?? 8}MB
+              </span>
             </div>
             <div className="nx-kv-row">
               <span className="nx-kv-key">API Secrets Isolation</span>
@@ -121,6 +143,9 @@ export function SecurityCenterSection({ token, onToast }: Pick<OpsProps, "token"
             </div>
           </div>
         </div>
+        <p className="nx-field-hint">
+          Security posture reflects live server environment and configuration checks. Run <code>npm audit</code> during release workflows to verify upstream dependency advisories.
+        </p>
       </div>
 
       <div className="nx-admin-card">
@@ -488,6 +513,7 @@ export function AuditLogsSection({ token, onToast }: Pick<OpsProps, "token" | "o
   const [logs, setLogs] = useState<AdminAuditRow[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -522,7 +548,7 @@ export function AuditLogsSection({ token, onToast }: Pick<OpsProps, "token" | "o
         <input
           className="nx-input"
           style={{ maxWidth: 320 }}
-          placeholder="Filter by action prefix (e.g. update_global_config)…"
+          placeholder="Filter by action prefix (e.g. vercel_env_, runtime_secret_)…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -542,22 +568,69 @@ export function AuditLogsSection({ token, onToast }: Pick<OpsProps, "token" | "o
                 <th>Target</th>
                 <th>Actor UID</th>
                 <th>Result</th>
+                <th style={{ textAlign: "right" }}>Details</th>
               </tr>
             </thead>
             <tbody>
-              {logs.map((row) => (
-                <tr key={row.id}>
-                  <td className="tabular">{new Date(row.createdAt).toLocaleString()}</td>
-                  <td className="mono">{row.action}</td>
-                  <td className="mono">{row.target}</td>
-                  <td className="mono">{row.actorUid}</td>
-                  <td>
-                    <span className={`nx-status-text ${row.result === "success" ? "ok" : "err"}`}>
-                      {row.result}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {logs.map((row) => {
+                const isExpanded = expandedId === row.id;
+                const hasDetails = Boolean(row.previousValue || row.newValue || row.metadata);
+                return (
+                  <Fragment key={row.id}>
+                    <tr>
+                      <td className="tabular">{new Date(row.createdAt).toLocaleString()}</td>
+                      <td className="mono">{row.action}</td>
+                      <td className="mono">{row.target}</td>
+                      <td className="mono">{row.actorUid}</td>
+                      <td>
+                        <span className={`nx-status-text ${row.result === "success" ? "ok" : "err"}`}>
+                          {row.result}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        {hasDetails ? (
+                          <button
+                            type="button"
+                            className="nx-secondary-btn"
+                            style={{ minHeight: 28, padding: "2px 8px", fontSize: 11.5 }}
+                            onClick={() => setExpandedId(isExpanded ? null : row.id)}
+                          >
+                            {isExpanded ? "Hide" : "Inspect"}
+                          </button>
+                        ) : (
+                          <span className="nx-field-hint">—</span>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && hasDetails && (
+                      <tr>
+                        <td colSpan={6} style={{ background: "var(--bg-elevated)" }}>
+                          <pre
+                            className="mono"
+                            style={{
+                              margin: 0,
+                              fontSize: 11.5,
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              color: "var(--text-secondary)"
+                            }}
+                          >
+                            {JSON.stringify(
+                              {
+                                ...(row.previousValue !== undefined ? { previousValue: row.previousValue } : {}),
+                                ...(row.newValue !== undefined ? { newValue: row.newValue } : {}),
+                                ...(row.metadata !== undefined ? { metadata: row.metadata } : {})
+                              },
+                              null,
+                              2
+                            )}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

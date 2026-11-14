@@ -361,3 +361,49 @@ export async function requireAdmin(req: Request): Promise<AuthContext> {
   }
   return ctx;
 }
+
+/**
+ * Validates same-origin CSRF protection on mutating Owner admin requests when an Origin header is supplied.
+ */
+export function assertSameOrigin(req: Request): void {
+  const origin = req.headers.get("origin");
+  if (!origin) return;
+  try {
+    const originHost = new URL(origin).host.toLowerCase();
+    const expectedHost = (
+      req.headers.get("x-forwarded-host") ||
+      req.headers.get("host") ||
+      new URL(req.url).host
+    )
+      .split(",")[0]
+      .trim()
+      .toLowerCase();
+    if (expectedHost && originHost !== expectedHost) {
+      throw new ApiError(403, "csrf_blocked", "Cross-origin administrative mutation rejected.");
+    }
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    throw new ApiError(403, "csrf_blocked", "Invalid request origin header.");
+  }
+}
+
+/**
+ * Verifies Owner Super Admin authorization plus recent authentication freshness for sensitive secret/Vercel mutations.
+ */
+export async function requireSensitiveAdmin(req: Request, maxAuthAgeSeconds = 3600): Promise<AuthContext> {
+  assertSameOrigin(req);
+  const ctx = await requireAdmin(req);
+  const authTime = typeof ctx.claims?.auth_time === "number" ? ctx.claims.auth_time : null;
+  if (authTime !== null) {
+    const age = Math.floor(Date.now() / 1000) - authTime;
+    if (age > maxAuthAgeSeconds) {
+      throw new ApiError(
+        401,
+        "reauth_required",
+        "Sensitive Owner operation requires recent authentication. Re-authenticate your session to continue."
+      );
+    }
+  }
+  return ctx;
+}
+

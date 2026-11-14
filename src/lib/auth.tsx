@@ -1,6 +1,14 @@
 "use client";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from "firebase/auth";
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  reauthenticateWithPopup,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  type User
+} from "firebase/auth";
 import { auth, firebaseReady, googleProvider } from "./firebase";
 import { saveUserProfile } from "./store";
 
@@ -16,8 +24,9 @@ interface AuthCtx {
   loading: boolean;
   configured: boolean;
   signIn: () => Promise<string | null>;
+  reauthenticate: () => Promise<string | null>;
   logout: () => Promise<void>;
-  getToken: () => Promise<string>;
+  getToken: (forceRefresh?: boolean) => Promise<string>;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -94,13 +103,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return "Sign-in failed. Please try again.";
         }
       },
+      async reauthenticate() {
+        if (!firebaseReady || !auth().currentUser) {
+          return "Active Firebase session is required to re-authenticate.";
+        }
+        try {
+          await reauthenticateWithPopup(auth().currentUser!, googleProvider());
+          await auth().currentUser!.getIdToken(true);
+          return null;
+        } catch (e: unknown) {
+          const code = (e as { code?: string })?.code;
+          if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+            return "Re-authentication cancelled.";
+          }
+          return "Re-authentication failed. Please sign out and sign back in.";
+        }
+      },
       async logout() {
         if (firebaseReady) {
           await signOut(auth());
         }
         setUser(null);
       },
-      async getToken() {
+      async getToken(forceRefresh = false) {
         if (!firebaseReady) {
           throw new Error("Authentication is not configured.");
         }
@@ -108,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!current) {
           throw new Error("Sign in required.");
         }
-        return current.getIdToken();
+        return current.getIdToken(forceRefresh);
       }
     }),
     [user, loading]

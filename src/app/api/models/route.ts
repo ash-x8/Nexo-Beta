@@ -4,6 +4,7 @@ import { readEnv } from "@/server/env";
 import { buildModelCatalog, getOverallProviderHealth } from "@/server/modelsRegistry";
 import { availableModels } from "@/server/providers";
 import { getRuntimeConfig, resolveEffectiveFeatures } from "@/server/runtimeConfig";
+import { loadRuntimeSecretsIntoOverlay } from "@/server/runtimeSecrets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export async function GET(req: Request) {
   try {
     const ctx = await requireAuthContext(req);
     const runtimeCfg = await getRuntimeConfig();
+    await loadRuntimeSecretsIntoOverlay(false, runtimeCfg.globalConfig.secretResolutionMode || "runtime_first");
     const g = runtimeCfg.globalConfig;
     const effectiveFeatures = resolveEffectiveFeatures(runtimeCfg.featureFlags, ctx.featureOverrides);
 

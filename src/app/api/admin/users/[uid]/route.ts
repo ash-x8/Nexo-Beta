@@ -1,6 +1,6 @@
 import { recordAuditLog } from "@/server/adminAudit";
 import { getUserDetailAnalytics } from "@/server/analytics";
-import { adminAuth, adminDb, ApiError, getOwnerAllowlist, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
+import { adminAuth, adminDb, ApiError, assertSameOrigin, getOwnerAllowlist, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 import { UserAdminPatchSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
@@ -24,6 +24,7 @@ export async function GET(req: Request, { params }: { params: { uid: string } })
 
 export async function PATCH(req: Request, { params }: { params: { uid: string } }) {
   try {
+    assertSameOrigin(req);
     const admin = await requireAdmin(req);
     if (!hasAdminCredentials()) {
       throw new ApiError(503, "server_config", "Firebase Admin credentials are required to modify user access.");

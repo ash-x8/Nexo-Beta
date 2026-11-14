@@ -451,3 +451,85 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Super Admin Tabs & Status Badges */
+.nx-admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.nx-admin-tab {
+  min-height: 34px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nx-admin-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.nx-admin-tab.active {
+  background: var(--bg-active);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.nx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.nx-badge.ok {
+  color: var(--status-ok);
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.nx-badge.warn {
+  color: var(--status-warn);
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.nx-badge.err {
+  color: var(--status-err);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.nx-badge.info {
+  color: var(--accent-blue);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+.nx-badge.muted {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-color: var(--border-hairline);
+}
+
+.nx-banner.warn {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: var(--text-primary);
+}
+

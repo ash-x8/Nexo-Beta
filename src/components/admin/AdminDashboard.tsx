@@ -6,10 +6,12 @@ import {
   ArrowLeft,
   BarChart3,
   Bot,
+  Cloud,
   Cpu,
   Database,
   FileText,
   Info,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Megaphone,
@@ -18,6 +20,7 @@ import {
   Settings,
   Shield,
   Sliders,
+  UserCheck,
   Users,
   Wrench,
   X
@@ -40,33 +43,39 @@ import {
   MonitoringSection,
   SecurityCenterSection
 } from "./AdminOpsSections";
+import { AdminSecretsSection } from "./AdminSecretsSection";
 import { UsersAndAnalyticsSection } from "./AdminUsersAndAnalytics";
+import { AdminVercelSection } from "./AdminVercelSection";
 import type { AdminOverviewResponse, AdminSectionId, ConfirmPromptState } from "./adminTypes";
 
 interface Props {
   initialOverview: AdminOverviewResponse;
-  getToken: () => Promise<string>;
+  getToken: (forceRefresh?: boolean) => Promise<string>;
+  onReauthenticate: () => Promise<string | null>;
   onLogout: () => Promise<void>;
 }
 
 const NAV_ITEMS: { id: AdminSectionId; label: string; icon: JSX.Element }[] = [
   { id: "overview", label: "Overview", icon: <LayoutDashboard size={16} /> },
   { id: "global", label: "Global Settings", icon: <Settings size={16} /> },
-  { id: "users", label: "Users & Accounts", icon: <Users size={16} /> },
-  { id: "analytics", label: "Usage Analytics", icon: <BarChart3 size={16} /> },
+  { id: "vercel", label: "Vercel Env Manager", icon: <Cloud size={16} /> },
+  { id: "secrets", label: "API & Secret Manager", icon: <KeyRound size={16} /> },
   { id: "providers", label: "AI Providers", icon: <Bot size={16} /> },
   { id: "models", label: "AI Models", icon: <Cpu size={16} /> },
+  { id: "users", label: "Users & Accounts", icon: <Users size={16} /> },
+  { id: "user-usage", label: "Individual User Usage", icon: <UserCheck size={16} /> },
+  { id: "analytics", label: "Global Usage Analytics", icon: <BarChart3 size={16} /> },
   { id: "security", label: "Security Center", icon: <Shield size={16} /> },
   { id: "maintenance", label: "Maintenance Mode", icon: <Wrench size={16} /> },
-  { id: "features", label: "Feature Flags", icon: <Sliders size={16} /> },
+  { id: "features", label: "Feature Management", icon: <Sliders size={16} /> },
   { id: "monitoring", label: "System Monitoring", icon: <Activity size={16} /> },
   { id: "announcements", label: "Announcements", icon: <Megaphone size={16} /> },
   { id: "audit", label: "Audit Logs", icon: <FileText size={16} /> },
-  { id: "data", label: "Data & Migrations", icon: <Database size={16} /> },
+  { id: "data", label: "Data Management", icon: <Database size={16} /> },
   { id: "about", label: "About & Credits", icon: <Info size={16} /> }
 ];
 
-export default function AdminDashboard({ initialOverview, getToken, onLogout }: Props) {
+export default function AdminDashboard({ initialOverview, getToken, onReauthenticate, onLogout }: Props) {
   const [section, setSection] = useState<AdminSectionId>("overview");
   const [overview, setOverview] = useState<AdminOverviewResponse>(initialOverview);
   const [days, setDays] = useState(14);
@@ -103,6 +112,17 @@ export default function AdminDashboard({ initialOverview, getToken, onLogout }: 
     },
     [days, getToken, showToast]
   );
+
+  const handleRequestReauth = useCallback(async () => {
+    const errMsg = await onReauthenticate();
+    if (errMsg) {
+      showToast("err", errMsg);
+      return false;
+    }
+    const freshTok = await getToken(true);
+    setToken(freshTok);
+    return true;
+  }, [onReauthenticate, getToken, showToast]);
 
   useEffect(() => {
     getToken()
@@ -242,7 +262,27 @@ export default function AdminDashboard({ initialOverview, getToken, onLogout }: 
               onConfirm={setConfirmPrompt}
             />
           )}
-          {(section === "users" || section === "analytics") && token && (
+          {section === "vercel" && token && (
+            <AdminVercelSection
+              token={token}
+              onRefreshToken={getToken}
+              onRequestReauth={handleRequestReauth}
+              onToast={showToast}
+              onConfirm={setConfirmPrompt}
+            />
+          )}
+          {section === "secrets" && token && (
+            <AdminSecretsSection
+              token={token}
+              resolutionMode={overview.runtime.globalConfig.secretResolutionMode}
+              onRefreshToken={getToken}
+              onRequestReauth={handleRequestReauth}
+              onRefreshOverview={() => refreshAll()}
+              onToast={showToast}
+              onConfirm={setConfirmPrompt}
+            />
+          )}
+          {(section === "users" || section === "user-usage" || section === "analytics") && token && (
             <UsersAndAnalyticsSection
               mode={section}
               overview={overview}
