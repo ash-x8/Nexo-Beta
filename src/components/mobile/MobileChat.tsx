@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, Menu, Pause, Play, Plus, Square, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, AudioLines, Menu, Pause, Play, Plus, Square, X } from "lucide-react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
-import type { Attachment, ChatMessage, PublicConfig } from "@/lib/types";
+import type { Attachment, ChatMessage, GeneratedImageArtifact, PublicConfig } from "@/lib/types";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
 import AudioWaveform from "../AudioWaveform";
 import Composer from "../Composer";
@@ -12,18 +12,18 @@ import { MessageBubble } from "../MessageBubble";
 interface Props {
   t: Dict;
   title: string;
+  draftKey: string;
+  enterToSend: boolean;
   online: boolean;
   busy: boolean;
   chatDisabled?: boolean;
   chatDisabledNote?: string;
   assistantState: AvatarState;
   error: string | null;
-  fallbackNotice: string | null;
   ownerMaintenanceBanner?: ReactNode;
   announcements?: PublicConfig["announcements"];
   onDismissAnnouncement?: (id: string) => void;
   onClearError: () => void;
-  onClearFallbackNotice: () => void;
   messages: ChatMessage[];
   msgsLoading: boolean;
   msgsHasMore: boolean;
@@ -38,6 +38,10 @@ interface Props {
   onResumeSpeak: () => void;
   onStopSpeak: () => void;
   onRegenerate: (msgId: string) => void;
+  onContinue: () => void;
+  onFeedback: (msgId: string, feedback: "up" | "down" | null) => void;
+  onSaveImageToLibrary: (img: GeneratedImageArtifact) => void;
+  onSaveResponseToLibrary: (msg: ChatMessage) => void;
   onEditResend: (msgId: string, nextText: string) => void;
   searchEnabled: boolean;
   useSearch: boolean;
@@ -49,12 +53,18 @@ interface Props {
   micSupported: boolean;
   micPermission: MicPermission;
   listening: boolean;
+  transcribing: boolean;
+  detectedLanguage: string | null;
   interim: string;
   micError: string | null;
   onStartMic: () => void;
   onStopMic: () => void;
   onCancelMic: () => void;
   onClearMicError: () => void;
+  voiceAppendText: string;
+  onConsumedVoiceAppend: () => void;
+  onOpenJarvis?: () => void;
+  onOpenImageStudio?: () => void;
   onSend: (text: string, files: Attachment[]) => void;
   onStopGen: () => void;
   onBack: () => void;
@@ -66,18 +76,18 @@ interface Props {
 export default function MobileChat({
   t,
   title,
+  draftKey,
+  enterToSend,
   online,
   busy,
   chatDisabled = false,
   chatDisabledNote,
   assistantState,
   error,
-  fallbackNotice,
   ownerMaintenanceBanner,
   announcements = [],
   onDismissAnnouncement,
   onClearError,
-  onClearFallbackNotice,
   messages,
   msgsLoading,
   msgsHasMore,
@@ -92,6 +102,10 @@ export default function MobileChat({
   onResumeSpeak,
   onStopSpeak,
   onRegenerate,
+  onContinue,
+  onFeedback,
+  onSaveImageToLibrary,
+  onSaveResponseToLibrary,
   onEditResend,
   searchEnabled,
   useSearch,
@@ -103,12 +117,18 @@ export default function MobileChat({
   micSupported,
   micPermission,
   listening,
+  transcribing,
+  detectedLanguage,
   interim,
   micError,
   onStartMic,
   onStopMic,
   onCancelMic,
   onClearMicError,
+  voiceAppendText,
+  onConsumedVoiceAppend,
+  onOpenJarvis,
+  onOpenImageStudio,
   onSend,
   onStopGen,
   onBack,
@@ -167,7 +187,10 @@ export default function MobileChat({
         </div>
 
         <div className="nx-mob-topbar-center">
-          <span className={`nx-live-dot ${!online ? "offline" : assistantState === "listening" || assistantState === "thinking" ? "recording" : assistantState === "error" ? "error" : ""}`} aria-hidden="true" />
+          <span
+            className={`nx-live-dot ${!online ? "offline" : assistantState === "listening" || assistantState === "thinking" ? "recording" : assistantState === "error" ? "error" : ""}`}
+            aria-hidden="true"
+          />
           <span className="nx-mob-topbar-title">{title || t.newChat}</span>
         </div>
 
@@ -191,6 +214,16 @@ export default function MobileChat({
                 <Square size={16} />
               </button>
             </>
+          )}
+          {onOpenJarvis && (
+            <button
+              type="button"
+              className="nx-mob-topbar-btn"
+              onClick={onOpenJarvis}
+              aria-label={t.jarvisStart}
+            >
+              <AudioLines size={18} color="var(--accent-blue)" />
+            </button>
           )}
           <button type="button" className="nx-mob-topbar-btn" onClick={onNewChat} aria-label={t.newChat}>
             <Plus size={20} />
@@ -239,20 +272,6 @@ export default function MobileChat({
           </div>
         )}
 
-        {fallbackNotice && (
-          <div className="nx-banner offline">
-            <span>{fallbackNotice}</span>
-            <button
-              type="button"
-              className="nx-banner-close"
-              onClick={onClearFallbackNotice}
-              aria-label={t.close}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-
         {error && (
           <div className="nx-banner error">
             <span>{error}</span>
@@ -297,6 +316,10 @@ export default function MobileChat({
               onResume={onResumeSpeak}
               onStopSpeak={onStopSpeak}
               onRegenerate={onRegenerate}
+              onContinue={m.id === lastAssistantId ? onContinue : undefined}
+              onFeedback={onFeedback}
+              onSaveImageToLibrary={onSaveImageToLibrary}
+              onSaveResponseToLibrary={onSaveResponseToLibrary}
               onEditResend={onEditResend}
             />
           ))
@@ -321,6 +344,8 @@ export default function MobileChat({
           disabled={!online || chatDisabled}
           disabledNote={chatDisabledNote}
           isMobile
+          draftKey={draftKey}
+          enterToSend={enterToSend}
           searchEnabled={searchEnabled}
           useSearch={useSearch}
           onToggleSearch={onToggleSearch}
@@ -331,15 +356,21 @@ export default function MobileChat({
           micSupported={micSupported}
           micPermission={micPermission}
           listening={listening}
+          transcribing={transcribing}
+          detectedLanguage={detectedLanguage}
           interim={interim}
           micError={micError}
           onStartMic={onStartMic}
           onStopMic={onStopMic}
           onCancelMic={onCancelMic}
           onClearMicError={onClearMicError}
+          onOpenJarvis={onOpenJarvis}
+          onOpenImageStudio={onOpenImageStudio}
           onSend={onSend}
           onStop={onStopGen}
           initialPrompt={initialPrompt}
+          voiceAppendText={voiceAppendText}
+          onConsumedVoiceAppend={onConsumedVoiceAppend}
         />
       </div>
     </div>

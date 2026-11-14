@@ -615,3 +615,27 @@
   align-items: center;
   gap: 10px;
 }
+
+.nx-mob-studio-subnav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+  scrollbar-width: none;
+}
+
+.nx-mob-studio-subnav::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .nx-view-shell {
+    padding: 4px 0 18px;
+  }
+
+  .nx-view-title {
+    font-size: 20px;
+  }
+}
+

@@ -15,13 +15,22 @@ import {
 } from "firebase/firestore";
 import { db, firebaseReady } from "./firebase";
 import { sanitizePrefs, SYNCED_KEYS, type Prefs } from "./prefs";
-import type { ChatMessage, Conversation, MemoryItem, MessageStatus } from "./types";
+import type {
+  ChatMessage,
+  Conversation,
+  LibraryItem,
+  MemoryItem,
+  MessageStatus,
+  ProjectItem
+} from "./types";
 import type { UserProfile } from "./auth";
 
 const userDoc = (uid: string) => doc(db(), `users/${uid}`);
 const convCol = (uid: string) => collection(db(), `users/${uid}/conversations`);
 const msgCol = (uid: string, cid: string) => collection(db(), `users/${uid}/conversations/${cid}/messages`);
 const memCol = (uid: string) => collection(db(), `users/${uid}/memory`);
+const projCol = (uid: string) => collection(db(), `users/${uid}/projects`);
+const libCol = (uid: string) => collection(db(), `users/${uid}/library`);
 const prefsDoc = (uid: string) => doc(db(), `users/${uid}/settings/prefs`);
 
 /** Firestore rejects `undefined` values, so strip them cleanly. */
@@ -71,11 +80,22 @@ export function subscribeConversations(
   }
 }
 
-export async function createConversation(uid: string, title: string): Promise<Conversation> {
+export async function createConversation(
+  uid: string,
+  title: string,
+  opts?: { projectId?: string | null }
+): Promise<Conversation> {
   const now = Date.now();
   const safeTitle = title.trim().slice(0, 120) || "New conversation";
-  const ref = await addDoc(convCol(uid), { title: safeTitle, createdAt: now, updatedAt: now });
-  return { id: ref.id, title: safeTitle, createdAt: now, updatedAt: now };
+  const payload = clean({
+    title: safeTitle,
+    createdAt: now,
+    updatedAt: now,
+    pinned: false,
+    projectId: opts?.projectId ?? null
+  });
+  const ref = await addDoc(convCol(uid), payload);
+  return { id: ref.id, ...payload };
 }
 
 export async function renameConversation(uid: string, cid: string, title: string): Promise<void> {
@@ -84,6 +104,29 @@ export async function renameConversation(uid: string, cid: string, title: string
   await updateDoc(doc(db(), `users/${uid}/conversations/${cid}`), {
     title: safeTitle,
     updatedAt: Date.now()
+  });
+}
+
+export async function togglePinConversation(uid: string, cid: string, pinned: boolean): Promise<void> {
+  await updateDoc(doc(db(), `users/${uid}/conversations/${cid}`), {
+    pinned,
+    updatedAt: Date.now()
+  });
+}
+
+export async function assignConversationProject(uid: string, cid: string, projectId: string | null): Promise<void> {
+  await updateDoc(doc(db(), `users/${uid}/conversations/${cid}`), {
+    projectId: projectId ? projectId.slice(0, 120) : null,
+    updatedAt: Date.now()
+  });
+}
+
+export async function saveConversationSummary(uid: string, cid: string, summary: string): Promise<void> {
+  const safe = summary.trim().slice(0, 3800);
+  if (!safe) return;
+  await updateDoc(doc(db(), `users/${uid}/conversations/${cid}`), {
+    summary: safe,
+    summaryUpdatedAt: Date.now()
   });
 }
 
@@ -124,6 +167,8 @@ export async function loadMessages(
 }
 
 export async function saveMessage(uid: string, cid: string, m: ChatMessage): Promise<void> {
+  // Keep document cleanly below Firestore 1MB cap even when an image artifact is attached
+  const safeImages = m.images?.filter((img) => img.dataUrl.length <= 750_000).slice(0, 2);
   const payload = clean({
     role: m.role,
     content: m.content.slice(0, 100000),
@@ -132,8 +177,10 @@ export async function saveMessage(uid: string, cid: string, m: ChatMessage): Pro
     status: m.status || "complete",
     attachments: m.attachments,
     sources: m.sources,
-    modelUsed: m.modelUsed,
-    fallbackFrom: m.fallbackFrom
+    images: safeImages?.length ? safeImages : undefined,
+    feedback: m.feedback,
+    capability: m.capability,
+    assistantLabel: m.assistantLabel
   });
   await setDoc(doc(db(), `users/${uid}/conversations/${cid}/messages/${m.id}`), payload);
 }
@@ -148,6 +195,17 @@ export async function updateMessageContent(
   await updateDoc(doc(db(), `users/${uid}/conversations/${cid}/messages/${mid}`), {
     content: content.slice(0, 100000),
     editedAt
+  });
+}
+
+export async function saveMessageFeedback(
+  uid: string,
+  cid: string,
+  mid: string,
+  feedback: "up" | "down" | null
+): Promise<void> {
+  await updateDoc(doc(db(), `users/${uid}/conversations/${cid}/messages/${mid}`), {
+    feedback
   });
 }
 
@@ -195,8 +253,17 @@ export function subscribeMemory(uid: string, cb: (m: MemoryItem[]) => void) {
   }
 }
 
-export async function addMemory(uid: string, text: string) {
-  return addDoc(memCol(uid), { text: text.slice(0, 300), createdAt: Date.now(), enabled: true });
+export async function addMemory(
+  uid: string,
+  text: string,
+  category: MemoryItem["category"] = "general"
+) {
+  return addDoc(memCol(uid), {
+    text: text.slice(0, 300),
+    category: category.slice(0, 40),
+    createdAt: Date.now(),
+    enabled: true
+  });
 }
 
 export async function updateMemory(uid: string, id: string, patch: { text?: string; enabled?: boolean }) {
@@ -208,6 +275,100 @@ export async function updateMemory(uid: string, id: string, patch: { text?: stri
 
 export async function deleteMemory(uid: string, id: string) {
   return deleteDoc(doc(db(), `users/${uid}/memory/${id}`));
+}
+
+/* ── Workspace Projects ───────────────────────────────────────────────── */
+
+export function subscribeProjects(uid: string, cb: (items: ProjectItem[]) => void) {
+  if (!firebaseReady) {
+    cb([]);
+    return () => {};
+  }
+  try {
+    return onSnapshot(
+      query(projCol(uid), orderBy("updatedAt", "desc")),
+      (s) => cb(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ProjectItem, "id">) }))),
+      () => cb([])
+    );
+  } catch {
+    cb([]);
+    return () => {};
+  }
+}
+
+export async function createProject(
+  uid: string,
+  input: { name: string; description?: string; instructions?: string; color?: string }
+): Promise<ProjectItem> {
+  const now = Date.now();
+  const payload = clean({
+    name: input.name.trim().slice(0, 100) || "Untitled project",
+    description: (input.description || "").trim().slice(0, 400),
+    instructions: (input.instructions || "").trim().slice(0, 1200),
+    color: input.color || "teal",
+    createdAt: now,
+    updatedAt: now
+  });
+  const ref = await addDoc(projCol(uid), payload);
+  return { id: ref.id, ...payload };
+}
+
+export async function updateProject(
+  uid: string,
+  pid: string,
+  patch: Partial<Pick<ProjectItem, "name" | "description" | "instructions" | "color">>
+): Promise<void> {
+  const safe: Record<string, unknown> = { updatedAt: Date.now() };
+  if (typeof patch.name === "string") safe.name = patch.name.trim().slice(0, 100) || "Untitled project";
+  if (typeof patch.description === "string") safe.description = patch.description.trim().slice(0, 400);
+  if (typeof patch.instructions === "string") safe.instructions = patch.instructions.trim().slice(0, 1200);
+  if (typeof patch.color === "string") safe.color = patch.color.slice(0, 24);
+  await updateDoc(doc(db(), `users/${uid}/projects/${pid}`), safe);
+}
+
+export async function deleteProject(uid: string, pid: string): Promise<void> {
+  await deleteDoc(doc(db(), `users/${uid}/projects/${pid}`));
+}
+
+/* ── Saved Library Items ──────────────────────────────────────────────── */
+
+export function subscribeLibrary(uid: string, cb: (items: LibraryItem[]) => void) {
+  if (!firebaseReady) {
+    cb([]);
+    return () => {};
+  }
+  try {
+    return onSnapshot(
+      query(libCol(uid), orderBy("createdAt", "desc"), limit(80)),
+      (s) => cb(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LibraryItem, "id">) }))),
+      () => cb([])
+    );
+  } catch {
+    cb([]);
+    return () => {};
+  }
+}
+
+export async function saveToLibrary(
+  uid: string,
+  item: Omit<LibraryItem, "id" | "createdAt">
+): Promise<LibraryItem> {
+  const now = Date.now();
+  const payload = clean({
+    kind: item.kind,
+    title: item.title.trim().slice(0, 160) || "Saved item",
+    content: item.content?.slice(0, 100000),
+    dataUrl: item.dataUrl && item.dataUrl.length <= 850_000 ? item.dataUrl : undefined,
+    aspectRatio: item.aspectRatio,
+    conversationId: item.conversationId,
+    createdAt: now
+  });
+  const ref = await addDoc(libCol(uid), payload);
+  return { id: ref.id, ...payload };
+}
+
+export async function deleteLibraryItem(uid: string, lid: string): Promise<void> {
+  await deleteDoc(doc(db(), `users/${uid}/library/${lid}`));
 }
 
 /** Live preferences from Firestore (validated). `cb(null)` when none are saved yet. */

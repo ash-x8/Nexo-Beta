@@ -18,24 +18,18 @@ export async function GET() {
     return entry ? entry.enabled : true;
   });
 
-  const provider =
+  const defaultProvider =
     g.defaultProvider && pCfg.providers[g.defaultProvider]?.enabled !== false ? g.defaultProvider : e.provider;
-  const providerEntry = pCfg.providers[provider as keyof typeof pCfg.providers];
-  const model =
-    g.defaultModel ||
-    providerEntry?.defaultModel ||
-    (provider === "gemini" ? e.geminiModel : e.compatModel);
+  const geminiReady = !!(e.geminiKey && pCfg.providers.gemini?.enabled !== false);
+  const compatReady = !!(e.compatBase && e.compatKey && pCfg.providers["openai-compatible"]?.enabled !== false);
+  const configured = defaultProvider === "gemini" ? geminiReady || compatReady : compatReady || geminiReady;
 
-  const configured =
-    provider === "gemini"
-      ? !!(e.geminiKey && model && providerEntry?.enabled !== false)
-      : !!(e.compatBase && e.compatKey && model && providerEntry?.enabled !== false);
-
-  const fallbackReady = provider === "gemini" ? pCfg.fallbackOrder.length > 1 : false;
+  const fallbackReady = pCfg.fallbackOrder.length > 1 || (geminiReady && compatReady);
   const features = resolveEffectiveFeatures(runtime.featureFlags);
 
   const body: PublicConfig = {
     appName: g.appName,
+    assistantVersion: "NEXO v1",
     brandingSubtitle: g.brandingSubtitle,
     defaultTheme: g.defaultTheme,
     defaultLanguage: g.defaultLanguage,
@@ -43,13 +37,15 @@ export async function GET() {
     allowRegistration: g.allowRegistration,
     configured,
     authConfigured: authConfigured(),
-    provider,
-    model,
+    provider: configured ? "nexo-v1" : "",
+    model: "NEXO v1",
     freeOnly: g.freeOnlyMode,
     configuredProviders: activeProviders,
     fallbackReady,
     searchEnabled: !!e.tavilyKey && features.webSearch,
-    ttsServer: !!e.geminiKey && features.tts,
+    imageEnabled: features.imageGeneration,
+    ttsServer: (!!e.geminiKey || compatReady) && features.tts,
+    transcribeServer: (!!e.geminiKey || compatReady) && features.voiceInput,
     perMinute: g.rateLimitPerMinute,
     dailyLimit: g.dailyRequestLimit,
     dailyTtsLimit: g.dailyTtsLimit,
@@ -65,7 +61,7 @@ export async function GET() {
     },
     announcements: getActivePublicAnnouncements(runtime.announcements),
     developer: DEVELOPER_INFO,
-    version: "2.3.0"
+    version: "1.0.0"
   };
   return Response.json(body);
 }

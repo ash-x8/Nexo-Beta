@@ -67,7 +67,7 @@ export async function consumeDaily(uid: string, field: "requests" | "tts", limit
 
 export async function recordUsageMetric(
   uid: string,
-  field: "rateLimitHits" | "fallbackCount" | "failedRequests" | "voiceRequests"
+  field: "rateLimitHits" | "fallbackCount" | "failedRequests" | "voiceRequests" | "imageRequests"
 ): Promise<void> {
   if (!hasAdminCredentials()) return;
   try {
@@ -93,6 +93,8 @@ export async function recordGenerationTelemetry(
     voiceTriggered?: boolean;
     failed?: boolean;
     isTts?: boolean;
+    isImage?: boolean;
+    taskType?: string;
   }
 ): Promise<void> {
   if (!hasAdminCredentials()) return;
@@ -102,18 +104,23 @@ export async function recordGenerationTelemetry(
     const estOut = estimateTokensFromChars(params.outputChars);
     const provKey = safeMetricKey(params.provider);
     const modelKey = safeMetricKey(params.model);
+    const taskKey = params.taskType ? safeMetricKey(params.taskType) : "";
 
     const patch: Record<string, unknown> = {
       updatedAt: Date.now(),
       ...(estIn > 0 ? { estimatedInputTokens: FieldValue.increment(estIn) } : {}),
       ...(estOut > 0 ? { estimatedOutputTokens: FieldValue.increment(estOut) } : {}),
       ...(params.voiceTriggered ? { voiceRequests: FieldValue.increment(1) } : {}),
+      ...(params.isImage ? { imageRequests: FieldValue.increment(1) } : {}),
       ...(params.failed ? { failedRequests: FieldValue.increment(1) } : {})
     };
 
-    if (!params.isTts && params.provider && params.model) {
+    if (!params.isTts && !params.isImage && params.provider && params.model) {
       patch[`providers.${provKey}`] = FieldValue.increment(1);
       patch[`models.${modelKey}`] = FieldValue.increment(1);
+    }
+    if (taskKey) {
+      patch[`tasks.${taskKey}`] = FieldValue.increment(1);
     }
 
     const userRef = adminDb().doc(`users/${uid}/usage/${day}`);
@@ -124,7 +131,11 @@ export async function recordGenerationTelemetry(
         {
           ...patch,
           day,
-          ...(!params.isTts ? { requests: FieldValue.increment(1) } : { tts: FieldValue.increment(1) })
+          ...(!params.isTts && !params.isImage
+            ? { requests: FieldValue.increment(1) }
+            : params.isTts
+              ? { tts: FieldValue.increment(1) }
+              : {})
         },
         { merge: true }
       )
@@ -147,6 +158,7 @@ export async function readUsage(
   const requests = typeof d.requests === "number" ? d.requests : 0;
   const tts = typeof d.tts === "number" ? d.tts : 0;
   const voiceRequests = typeof d.voiceRequests === "number" ? d.voiceRequests : 0;
+  const imageRequests = typeof d.imageRequests === "number" ? d.imageRequests : 0;
   const estimatedInputTokens = typeof d.estimatedInputTokens === "number" ? d.estimatedInputTokens : 0;
   const estimatedOutputTokens = typeof d.estimatedOutputTokens === "number" ? d.estimatedOutputTokens : 0;
   const rateLimitHits = typeof d.rateLimitHits === "number" ? d.rateLimitHits : 0;
@@ -161,6 +173,7 @@ export async function readUsage(
     requests,
     tts,
     voiceRequests,
+    imageRequests,
     estimatedInputTokens,
     estimatedOutputTokens,
     rateLimitHits,

@@ -241,6 +241,16 @@ export function MonitoringSection({ overview, onRefresh }: Pick<OpsProps, "overv
             <span className="nx-kv-key">Missing Keys</span>
             <span className="nx-kv-val">{system.missingKeys.length ? system.missingKeys.join(", ") : "All required keys present"}</span>
           </div>
+          {(system.providerHealthDetails || []).map((p) => (
+            <div key={p.providerId} className="nx-kv-row">
+              <span className="nx-kv-key">
+                {p.displayName} ({p.providerId})
+              </span>
+              <span className={`nx-status-text ${p.status === "healthy" ? "ok" : p.status === "degraded" || p.status === "rate_limited" ? "warn" : ""}`}>
+                {p.status} · circuit {p.circuitState} · {p.avgLatencyMs != null ? `${p.avgLatencyMs}ms avg` : "no samples"}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

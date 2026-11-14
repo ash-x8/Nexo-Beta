@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { MoreVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { MoreVertical, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
 import type { Dict } from "@/lib/i18n";
 import type { Conversation } from "@/lib/types";
 import BottomSheet from "./BottomSheet";
@@ -13,6 +13,7 @@ interface Props {
   onSelect: (id: string) => void;
   onNewChat: () => void;
   onRename: (id: string, title: string) => Promise<void>;
+  onTogglePin: (id: string, nextPinned: boolean) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -24,6 +25,7 @@ export default function MobileChats({
   onSelect,
   onNewChat,
   onRename,
+  onTogglePin,
   onDelete
 }: Props) {
   const [query, setQuery] = useState("");
@@ -43,6 +45,7 @@ export default function MobileChats({
     const startYesterday = startToday - 86_400_000;
     const startWeek = startToday - 7 * 86_400_000;
 
+    const pinned: Conversation[] = [];
     const buckets: { label: string; items: Conversation[] }[] = [
       { label: t.groupToday, items: [] },
       { label: t.groupYesterday, items: [] },
@@ -51,13 +54,21 @@ export default function MobileChats({
     ];
 
     for (const c of filtered) {
+      if (c.pinned) {
+        pinned.push(c);
+        continue;
+      }
       if (c.updatedAt >= startToday) buckets[0].items.push(c);
       else if (c.updatedAt >= startYesterday) buckets[1].items.push(c);
       else if (c.updatedAt >= startWeek) buckets[2].items.push(c);
       else buckets[3].items.push(c);
     }
 
-    return buckets.filter((b) => b.items.length > 0);
+    const out = buckets.filter((b) => b.items.length > 0);
+    if (pinned.length > 0) {
+      out.unshift({ label: "Pinned", items: pinned });
+    }
+    return out;
   }, [filtered, t]);
 
   const openActions = (c: Conversation) => {
@@ -104,7 +115,10 @@ export default function MobileChats({
                     style={{ textAlign: "left", minHeight: 44, justifyContent: "center" }}
                     onClick={() => onSelect(c.id)}
                   >
-                    <span className="nx-mob-row-title">{c.title}</span>
+                    <span className="nx-mob-row-title">
+                      {c.pinned && <Pin size={12} style={{ marginRight: 5, display: "inline", verticalAlign: "middle", color: "var(--accent-blue)" }} />}
+                      {c.title}
+                    </span>
                     <span className="nx-mob-row-sub tabular">
                       {new Date(c.updatedAt).toLocaleDateString()}
                     </span>
@@ -139,6 +153,17 @@ export default function MobileChats({
       >
         {mode === "menu" && sheetConv && (
           <>
+            <button
+              type="button"
+              className="nx-sheet-action"
+              onClick={async () => {
+                await onTogglePin(sheetConv.id, !sheetConv.pinned);
+                setSheetConv(null);
+              }}
+            >
+              {sheetConv.pinned ? <PinOff size={18} /> : <Pin size={18} />}
+              <span>{sheetConv.pinned ? t.unpinChat : t.pinChat}</span>
+            </button>
             <button
               type="button"
               className="nx-sheet-action"

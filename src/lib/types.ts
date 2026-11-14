@@ -1,10 +1,31 @@
 export type Role = "user" | "assistant";
 export type Lang = "en" | "si";
-export type ReplyLang = "auto" | Lang;
+export type ReplyLang = "auto" | Lang | "ta" | "hi";
+export type VoiceInputLang = "auto" | "en-US" | "si-LK" | "ta-IN" | "hi-IN";
 export type ResponseStyle = "balanced" | "concise" | "detailed";
+export type ResponseTone = "natural" | "professional" | "friendly" | "technical";
+export type AccentPreset = "teal" | "sky" | "emerald" | "indigo" | "amber";
+export type FontSizePref = "sm" | "md" | "lg";
+export type ChatDensity = "compact" | "comfortable" | "spacious";
 export type Theme = "dark" | "light" | "system";
 export type MessageStatus = "complete" | "streaming" | "stopped" | "error";
 export type ModelStatus = "available" | "rate_limited" | "unavailable";
+
+export type NexoTaskType =
+  | "general"
+  | "reasoning"
+  | "coding"
+  | "writing"
+  | "translation"
+  | "summarization"
+  | "math"
+  | "imageGen"
+  | "imageUnderstanding"
+  | "audioProcessing"
+  | "voiceConversation"
+  | "webSearch";
+
+export type ProviderHealthState = "healthy" | "degraded" | "rate_limited" | "unavailable" | "unknown";
 
 export type UserRole = "SUPER_ADMIN" | "USER";
 export type AccountStatus = "active" | "suspended" | "disabled";
@@ -64,6 +85,8 @@ export interface ProviderConfigEntry {
   defaultModel: string;
   ttsModel?: string;
   ttsVoice?: string;
+  imageModel?: string;
+  timeoutMs?: number;
 }
 
 export interface ProviderConfig {
@@ -120,6 +143,15 @@ export interface Source {
   url: string;
 }
 
+export interface GeneratedImageArtifact {
+  id: string;
+  prompt: string;
+  aspectRatio: "1:1" | "4:5" | "3:2" | "16:9" | "9:16";
+  mimeType: string;
+  dataUrl: string;
+  createdAt: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: Role;
@@ -129,9 +161,16 @@ export interface ChatMessage {
   status?: MessageStatus;
   attachments?: { name: string; mime: string; size?: number }[];
   sources?: Source[];
+  images?: GeneratedImageArtifact[];
+  feedback?: "up" | "down" | null;
+  capability?: NexoTaskType;
+  assistantLabel?: "NEXO v1";
+  /** Server-only / legacy field; never rendered in normal user UI */
   modelUsed?: string;
+  /** Server-only / legacy field; never rendered in normal user UI */
   fallbackFrom?: string;
   error?: string;
+  requestId?: string;
 }
 
 export interface Conversation {
@@ -139,11 +178,37 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  pinned?: boolean;
+  projectId?: string | null;
+  summary?: string;
+  summaryUpdatedAt?: number;
+}
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  color?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface LibraryItem {
+  id: string;
+  kind: "image" | "prompt" | "response" | "file";
+  title: string;
+  content?: string;
+  dataUrl?: string;
+  aspectRatio?: string;
+  conversationId?: string;
+  createdAt: number;
 }
 
 export interface MemoryItem {
   id: string;
   text: string;
+  category?: "preference" | "profile" | "project" | "decision" | "general";
   createdAt: number;
   enabled?: boolean;
 }
@@ -177,6 +242,7 @@ export interface DeveloperInfo {
 
 export interface PublicConfig {
   appName: string;
+  assistantVersion?: string;
   brandingSubtitle: string;
   defaultTheme: Theme;
   defaultLanguage: Lang;
@@ -190,7 +256,9 @@ export interface PublicConfig {
   configuredProviders: string[];
   fallbackReady: boolean;
   searchEnabled: boolean;
+  imageEnabled?: boolean;
   ttsServer: boolean;
+  transcribeServer?: boolean;
   perMinute: number;
   dailyLimit: number;
   dailyTtsLimit: number;
@@ -224,6 +292,7 @@ export interface UsageInfo {
   requests: number;
   tts: number;
   voiceRequests?: number;
+  imageRequests?: number;
   estimatedInputTokens?: number;
   estimatedOutputTokens?: number;
   rateLimitHits?: number;
@@ -236,6 +305,27 @@ export interface UsageInfo {
   remainingTts?: number;
   providerHealth?: "healthy" | "degraded" | "unconfigured";
   quotaSource?: "account_firestore";
+}
+
+export interface ProviderHealthTelemetry {
+  providerId: string;
+  displayName: string;
+  enabled: boolean;
+  configured: boolean;
+  status: ProviderHealthState;
+  circuitState: "closed" | "open" | "half_open";
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
+  lastErrorCategory: string | null;
+  avgLatencyMs: number | null;
+  recentLatencyMs: number | null;
+  avgTtftMs: number | null;
+  rateLimitHits: number;
+  fallbackTriggeredCount: number;
+  totalCalls: number;
+  successCalls: number;
+  quotaStatus: "unknown" | "rate_limited" | "available";
+  capabilities: string[];
 }
 
 export interface AdminUserSummary {
@@ -291,7 +381,9 @@ export interface SecurityEventEntry {
 export type StreamEvent =
   | { t: string }
   | { sources: Source[] }
+  | { nexo: { assistant: "NEXO v1"; capability: NexoTaskType; status: "routing" | "streaming" | "complete"; ttftMs?: number; durationMs?: number } }
   | { meta: { model: string; provider: string; freeEligible: boolean } }
   | { fallback: { from: string; to: string; reason: string } }
   | { done: true }
   | { error: { code: string; message: string } };
+

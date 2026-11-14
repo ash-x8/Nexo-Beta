@@ -8,6 +8,7 @@ import type {
   ModelCatalogItem,
   ModelRegistryOverrides,
   ProviderConfig,
+  ProviderHealthTelemetry,
   SecurityEventEntry,
   UserRole
 } from "@/lib/types";
@@ -33,6 +34,7 @@ export interface DailyMetricPoint {
   requests: number;
   tts: number;
   voiceRequests: number;
+  imageRequests?: number;
   failedRequests: number;
   rateLimitHits: number;
   fallbackCount: number;
@@ -64,6 +66,7 @@ export interface AdminOverviewResponse {
     tavilyConfigured: boolean;
     missingKeys: string[];
     providerHealth: string;
+    providerHealthDetails?: ProviderHealthTelemetry[];
     tokenAccuracyNote: string;
   };
   summary: {
@@ -73,6 +76,7 @@ export interface AdminOverviewResponse {
     requestsWindow: number;
     ttsWindow: number;
     voiceWindow: number;
+    imageRequestsWindow?: number;
     estimatedTokensWindow: number;
     failedRequestsWindow: number;
     rateLimitHitsWindow: number;
@@ -82,6 +86,7 @@ export interface AdminOverviewResponse {
   daily: DailyMetricPoint[];
   byProvider: Record<string, number>;
   byModel: Record<string, number>;
+  byTask?: Record<string, number>;
   modelCatalog: ModelCatalogItem[];
   recentSecurityEvents: SecurityEventEntry[];
 }

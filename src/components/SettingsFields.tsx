@@ -2,16 +2,26 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ExternalLink, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import { fetchModels, fetchUsage } from "@/lib/api";
+import { fetchUsage } from "@/lib/api";
 import type { UserProfile } from "@/lib/auth";
-import type { Dict } from "@/lib/i18n";
 import { firebaseMessage } from "@/lib/errors";
+import type { Dict } from "@/lib/i18n";
 import { looksSensitive, MEMORY_LIMIT } from "@/lib/memory";
-import type { Prefs, ResponseStyle, Theme } from "@/lib/prefs";
+import type {
+  AccentPreset,
+  ChatDensity,
+  FontSizePref,
+  Prefs,
+  ResponseStyle,
+  ResponseTone,
+  Theme,
+  VoiceInputLang
+} from "@/lib/prefs";
 import { addMemory, deleteMemory, updateMemory } from "@/lib/store";
-import type { FeatureKey, MemoryItem, ModelCatalogItem, PublicConfig, SessionInfo, UsageInfo } from "@/lib/types";
+import type { FeatureKey, MemoryItem, PublicConfig, SessionInfo, UsageInfo } from "@/lib/types";
 import { useInstall } from "@/lib/useInstall";
 import type { MicPermission } from "@/lib/useSpeechRecognition";
+import { AboutCreditsContent } from "./AboutCreditsView";
 import InstallButton from "./InstallButton";
 import ModelSelector from "./ModelSelector";
 
@@ -32,6 +42,14 @@ interface Props {
   onLogout: () => Promise<void>;
 }
 
+const ACCENT_PRESETS: { id: AccentPreset; label: string; hex: string }[] = [
+  { id: "teal", label: "NEXO Teal", hex: "#00d5c5" },
+  { id: "sky", label: "Sky Cyan", hex: "#38bdf8" },
+  { id: "emerald", label: "Emerald", hex: "#10b981" },
+  { id: "indigo", label: "Indigo", hex: "#818cf8" },
+  { id: "amber", label: "Amber", hex: "#f59e0b" }
+];
+
 export default function SettingsFields({
   section,
   t,
@@ -46,31 +64,17 @@ export default function SettingsFields({
   micPermission,
   onLogout
 }: Props) {
-  const [catalog, setCatalog] = useState<ModelCatalogItem[]>([]);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [usageErr, setUsageErr] = useState<string | null>(null);
 
   const [memInput, setMemInput] = useState("");
+  const [memCat, setMemCat] = useState<NonNullable<MemoryItem["category"]>>("general");
   const [memErr, setMemErr] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
 
   const { standalone } = useInstall();
-
-  useEffect(() => {
-    if (section !== "ai") return;
-    let active = true;
-    getToken()
-      .then((tok) => fetchModels(tok))
-      .then((r) => {
-        if (active && r.catalog.length) setCatalog(r.catalog);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [section, getToken]);
 
   useEffect(() => {
     if (section !== "voice" || typeof window === "undefined" || !window.speechSynthesis) return;
@@ -110,7 +114,7 @@ export default function SettingsFields({
       return;
     }
     try {
-      await addMemory(user.uid, val);
+      await addMemory(user.uid, val, memCat);
       setMemInput("");
     } catch (e) {
       setMemErr(firebaseMessage(e));
@@ -167,11 +171,98 @@ export default function SettingsFields({
             <span className="nx-field-label">{t.theme}</span>
             <div className="nx-seg">
               {(["dark", "light", "system"] as Theme[]).map((th) => (
-                <button key={th} type="button" className={prefs.theme === th ? "active" : ""} onClick={() => setPref("theme", th)}>
+                <button
+                  key={th}
+                  type="button"
+                  className={prefs.theme === th ? "active" : ""}
+                  onClick={() => setPref("theme", th)}
+                >
                   {th === "dark" ? t.themeDark : th === "light" ? t.themeLight : t.themeSystem}
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.accentColorLabel}</span>
+            <div className="nx-swatch-row">
+              {ACCENT_PRESETS.map((ac) => (
+                <button
+                  key={ac.id}
+                  type="button"
+                  className={`nx-swatch-btn ${prefs.accentColor === ac.id ? "active" : ""}`}
+                  style={{ background: ac.hex }}
+                  onClick={() => setPref("accentColor", ac.id)}
+                  aria-label={ac.label}
+                  title={ac.label}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.fontSizeLabel}</span>
+            <div className="nx-seg">
+              {(
+                [
+                  ["sm", "Small"],
+                  ["md", "Medium"],
+                  ["lg", "Large"]
+                ] as [FontSizePref, string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={prefs.fontSize === id ? "active" : ""}
+                  onClick={() => setPref("fontSize", id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.densityLabel}</span>
+            <div className="nx-seg">
+              {(
+                [
+                  ["compact", "Compact"],
+                  ["comfortable", "Standard"],
+                  ["spacious", "Spacious"]
+                ] as [ChatDensity, string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={prefs.chatDensity === id ? "active" : ""}
+                  onClick={() => setPref("chatDensity", id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.enterToSendLabel}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={prefs.enterToSend}
+              className={`nx-switch ${prefs.enterToSend ? "on" : ""}`}
+              onClick={() => setPref("enterToSend", !prefs.enterToSend)}
+            >
+              <span />
+            </button>
           </div>
         </div>
 
@@ -200,10 +291,23 @@ export default function SettingsFields({
       <div className="nx-mob-settings-group">
         <div className="nx-field-card">
           <span className="nx-field-label">{t.replyLang}</span>
-          <div className="nx-seg">
-            {(["auto", "en", "si"] as const).map((rl) => (
-              <button key={rl} type="button" className={prefs.reply === rl ? "active" : ""} onClick={() => setPref("reply", rl)}>
-                {rl === "auto" ? t.replyAuto : rl === "en" ? "English" : "සිංහල"}
+          <div className="nx-seg" style={{ flexWrap: "wrap" }}>
+            {(
+              [
+                ["auto", t.replyAuto],
+                ["en", "English"],
+                ["si", "සිංහල"],
+                ["ta", "தமிழ்"],
+                ["hi", "हिन्दी"]
+              ] as const
+            ).map(([rl, label]) => (
+              <button
+                key={rl}
+                type="button"
+                className={prefs.reply === rl ? "active" : ""}
+                onClick={() => setPref("reply", rl)}
+              >
+                {label}
               </button>
             ))}
           </div>
@@ -213,8 +317,36 @@ export default function SettingsFields({
           <span className="nx-field-label">{t.responseStyleLabel}</span>
           <div className="nx-seg">
             {(["balanced", "concise", "detailed"] as ResponseStyle[]).map((st) => (
-              <button key={st} type="button" className={prefs.responseStyle === st ? "active" : ""} onClick={() => setPref("responseStyle", st)}>
+              <button
+                key={st}
+                type="button"
+                className={prefs.responseStyle === st ? "active" : ""}
+                onClick={() => setPref("responseStyle", st)}
+              >
                 {st === "balanced" ? t.styleBalanced : st === "concise" ? t.styleConcise : t.styleDetailed}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <span className="nx-field-label">{t.responseToneLabel}</span>
+          <div className="nx-seg" style={{ flexWrap: "wrap" }}>
+            {(
+              [
+                ["natural", t.toneNatural],
+                ["professional", t.toneProfessional],
+                ["friendly", t.toneFriendly],
+                ["technical", t.toneTechnical]
+              ] as [ResponseTone, string][]
+            ).map(([tone, label]) => (
+              <button
+                key={tone}
+                type="button"
+                className={prefs.responseTone === tone ? "active" : ""}
+                onClick={() => setPref("responseTone", tone)}
+              >
+                {label}
               </button>
             ))}
           </div>
@@ -222,15 +354,11 @@ export default function SettingsFields({
 
         <ModelSelector
           t={t}
-          selectedModel={prefs.model}
-          defaultModel={config?.model || "gemini-2.5-flash"}
-          catalog={catalog}
-          onSelect={(modelId) => setPref("model", modelId)}
+          configured={config?.configured}
+          searchEnabled={Boolean(config?.searchEnabled) && features?.webSearch !== false}
+          imageEnabled={Boolean(config?.imageEnabled) && features?.imageGeneration !== false}
+          voiceEnabled={features?.voiceInput !== false}
         />
-
-        {config?.freeOnly !== false && (
-          <p className="nx-field-hint" style={{ paddingLeft: 2 }}>{t.freeModeDesc}</p>
-        )}
 
         <div className="nx-field-card">
           <span className="nx-field-label">{t.nicknameLabel}</span>
@@ -266,16 +394,26 @@ export default function SettingsFields({
           </div>
         )}
         <div className="nx-field-card">
-          <div className="nx-field-row">
-            <span className="nx-field-label">{t.voiceLang}</span>
-            <div className="nx-seg">
-              <button type="button" className={prefs.voiceLang === "en-US" ? "active" : ""} onClick={() => setPref("voiceLang", "en-US")}>
-                English
+          <span className="nx-field-label">{t.voiceLang}</span>
+          <div className="nx-seg" style={{ flexWrap: "wrap" }}>
+            {(
+              [
+                ["auto", "Auto-Detect"],
+                ["en-US", "English"],
+                ["si-LK", "සිංහල"],
+                ["ta-IN", "தமிழ்"],
+                ["hi-IN", "हिन्दी"]
+              ] as [VoiceInputLang, string][]
+            ).map(([vl, label]) => (
+              <button
+                key={vl}
+                type="button"
+                className={prefs.voiceLang === vl ? "active" : ""}
+                onClick={() => setPref("voiceLang", vl)}
+              >
+                {label}
               </button>
-              <button type="button" className={prefs.voiceLang === "si-LK" ? "active" : ""} onClick={() => setPref("voiceLang", "si-LK")}>
-                සිංහල
-              </button>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -292,6 +430,40 @@ export default function SettingsFields({
             >
               <span />
             </button>
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.jarvisContinuousLabel}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={prefs.jarvisContinuous}
+              className={`nx-switch ${prefs.jarvisContinuous ? "on" : ""}`}
+              onClick={() => setPref("jarvisContinuous", !prefs.jarvisContinuous)}
+            >
+              <span />
+            </button>
+          </div>
+        </div>
+
+        <div className="nx-field-card">
+          <div className="nx-field-row">
+            <span className="nx-field-label">{t.voiceSpeedLabel}</span>
+            <div className="nx-seg">
+              {[0.85, 1, 1.15, 1.3].map((spd) => (
+                <button
+                  key={spd}
+                  type="button"
+                  disabled={!ttsAllowed}
+                  className={Math.abs(prefs.voiceSpeed - spd) < 0.03 ? "active" : ""}
+                  onClick={() => setPref("voiceSpeed", spd)}
+                >
+                  {spd}x
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -315,7 +487,11 @@ export default function SettingsFields({
 
         <div className="nx-field-card">
           <p className="nx-field-hint">{t.micPrivacy}</p>
-          {micPermission === "denied" && <p className="nx-field-hint" style={{ color: "var(--status-err)" }}>{t.micDenied}</p>}
+          {micPermission === "denied" && (
+            <p className="nx-field-hint" style={{ color: "var(--status-err)" }}>
+              {t.micDenied}
+            </p>
+          )}
           {micPermission === "unsupported" && <p className="nx-field-hint">{t.micUnsupported}</p>}
         </div>
       </div>
@@ -351,9 +527,23 @@ export default function SettingsFields({
         </div>
 
         <div className="nx-field-card">
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <select
+              className="nx-select"
+              style={{ width: 130 }}
+              value={memCat}
+              onChange={(e) => setMemCat(e.target.value as NonNullable<MemoryItem["category"]>)}
+              aria-label="Memory category"
+            >
+              <option value="general">General</option>
+              <option value="preference">Preference</option>
+              <option value="profile">Profile</option>
+              <option value="project">Project</option>
+              <option value="decision">Decision</option>
+            </select>
             <input
               className="nx-input"
+              style={{ flex: 1, minWidth: 160 }}
               maxLength={300}
               value={memInput}
               placeholder={t.memoryPlaceholder}
@@ -367,7 +557,11 @@ export default function SettingsFields({
               <span>{t.addMemory}</span>
             </button>
           </div>
-          {memErr && <p className="nx-field-hint" style={{ color: "var(--status-err)" }}>{memErr}</p>}
+          {memErr && (
+            <p className="nx-field-hint" style={{ color: "var(--status-err)" }}>
+              {memErr}
+            </p>
+          )}
         </div>
 
         {memory.map((item) => {
@@ -401,6 +595,19 @@ export default function SettingsFields({
                       );
                     }}
                   >
+                    {item.category && (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          textTransform: "uppercase",
+                          color: "var(--accent-blue)",
+                          marginRight: 8,
+                          fontWeight: 600
+                        }}
+                      >
+                        {item.category}
+                      </span>
+                    )}
                     {item.text}
                   </button>
                   <div style={{ display: "flex", gap: 4 }}>
@@ -440,6 +647,7 @@ export default function SettingsFields({
     const reqLimit = usage?.dailyLimit ?? config?.dailyLimit ?? 100;
     const ttsUsed = usage?.tts ?? 0;
     const ttsLimit = usage?.dailyTtsLimit ?? config?.dailyTtsLimit ?? 40;
+    const imgUsed = usage?.imageRequests ?? 0;
     const rateHits = usage?.rateLimitHits ?? 0;
     const fallbackCount = usage?.fallbackCount ?? 0;
     const healthLabel =
@@ -482,23 +690,40 @@ export default function SettingsFields({
 
         <div className="nx-field-card">
           <div className="nx-field-row">
+            <span className="nx-field-label">{t.imagesGenerated}</span>
+            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>
+              {imgUsed}
+            </span>
+          </div>
+          <div className="nx-field-row">
             <span className="nx-field-label">{t.providerHealthLabel}</span>
-            <span style={{ fontSize: 13, color: usage?.providerHealth === "degraded" ? "var(--status-warn)" : "var(--status-ok)", fontWeight: 500 }}>
-              {healthLabel}
+            <span
+              style={{
+                fontSize: 13,
+                color: usage?.providerHealth === "degraded" ? "var(--status-warn)" : "var(--status-ok)",
+                fontWeight: 500
+              }}
+            >
+              {healthLabel} (NEXO v1)
             </span>
           </div>
           <div className="nx-field-row">
             <span className="nx-field-label">{t.rateLimitErrors}</span>
-            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>{rateHits}</span>
+            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>
+              {rateHits}
+            </span>
           </div>
           <div className="nx-field-row">
             <span className="nx-field-label">{t.fallbackSwitches}</span>
-            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>{fallbackCount}</span>
+            <span className="tabular" style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>
+              {fallbackCount}
+            </span>
           </div>
         </div>
 
         <p className="nx-field-hint tabular">
-          {t.quotaNote} {usage?.day ? `(${usage.day} · ${config?.perMinute ?? 10}/min · ${config?.maxInputChars ?? 8000} chars/msg)` : ""}
+          {t.quotaNote}{" "}
+          {usage?.day ? `(${usage.day} · ${config?.perMinute ?? 10}/min · ${config?.maxInputChars ?? 8000} chars/msg)` : ""}
         </p>
       </div>
     );
@@ -551,77 +776,17 @@ export default function SettingsFields({
     );
   }
 
-  // About & Credits: Official NEXO AI ownership and conditional active-provider attribution
-  const dev = config?.developer || {
-    projectName: config?.appName || "NEXO AI",
-    creatorName: "Ash Wickramasinghe",
-    fullName: "Kushan A Wickramasinghe",
-    role: "Founder, Creator & Independent Developer",
-    website: "https://ash-wickramasinghe.site",
-    copyright: "© 2026 Ash Wickramasinghe. All Rights Reserved."
-  };
-
-  const activeProviders = config?.configuredProviders?.length
-    ? config.configuredProviders
-    : config?.provider
-      ? [config.provider]
-      : [];
-
-  const thirdPartyItems: string[] = [];
-  if (activeProviders.includes("gemini")) thirdPartyItems.push("Google Gemini API (AI inference & speech synthesis)");
-  if (activeProviders.includes("openai-compatible")) thirdPartyItems.push("Configured OpenAI-Compatible API provider");
-  if (config?.authConfigured) thirdPartyItems.push("Firebase Authentication & Cloud Firestore");
-  if (config?.searchEnabled) thirdPartyItems.push("Tavily Web Search API");
-
   return (
     <div className="nx-mob-settings-group">
-      <div className="nx-field-card">
-        <span className="nx-field-label">{t.developerSectionTitle}</span>
-        <p className="nx-field-hint" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-          {config?.appName || dev.projectName} · {dev.creatorName} ({dev.fullName})
-        </p>
-        <p className="nx-field-hint">
-          {dev.role} · {t.aboutBody}
-        </p>
-        <a
-          href={dev.website}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}
-        >
-          <span>{dev.website}</span>
-          <ExternalLink size={12} />
-        </a>
-      </div>
-
-      <div className="nx-field-card">
-        <span className="nx-field-label">{t.aiTechTitle}</span>
-        <p className="nx-field-hint">{t.independentNotice}</p>
-      </div>
-
-      <div className="nx-field-card">
-        <span className="nx-field-label">{t.thirdPartyTitle}</span>
-        <p className="nx-field-hint">
-          {thirdPartyItems.length > 0
-            ? thirdPartyItems.join(" · ")
-            : "Third-party AI and persistence providers are active only when configured on the server."}
-        </p>
-      </div>
-
-      <div className="nx-field-card">
-        <span className="nx-field-label">{t.privacyTitle}</span>
-        <p className="nx-field-hint">{t.privacyBody}</p>
-      </div>
-
-      <div className="nx-field-card">
-        <span className="nx-field-label">{t.disclaimerTitle}</span>
-        <p className="nx-field-hint">{t.aiDisclaimerBody}</p>
-      </div>
-
-      <div className="nx-field-card">
-        <span className="nx-field-label">{t.ipTitle}</span>
-        <p className="nx-field-hint">{dev.copyright}</p>
-      </div>
+      <AboutCreditsContent t={t} config={config} />
+      <Link
+        href="/about"
+        className="nx-secondary-btn"
+        style={{ textDecoration: "none", justifyContent: "space-between" }}
+      >
+        <span>Open dedicated About & Credits page</span>
+        <ExternalLink size={14} />
+      </Link>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { recordAuditLog } from "@/server/adminAudit";
 import { ApiError, requireAdmin } from "@/server/firebaseAdmin";
 import { testProviderConnectivity } from "@/server/providers";
+import { recordProviderFailure, recordProviderSuccess } from "@/server/nexo/healthRegistry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,11 @@ export async function POST(req: Request) {
     const timer = setTimeout(() => ac.abort(), 10_000);
     try {
       const result = await testProviderConnectivity(parsed.data.provider, ac.signal);
+      if (result.ok) {
+        recordProviderSuccess(parsed.data.provider, { latencyMs: result.latencyMs });
+      } else {
+        recordProviderFailure(parsed.data.provider, "connectivity_test_failed", { latencyMs: result.latencyMs });
+      }
       await recordAuditLog({
         actorUid: admin.uid,
         action: "test_provider_connection",

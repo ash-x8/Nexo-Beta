@@ -16,9 +16,21 @@ export function plainForSpeech(md: string): string {
     .slice(0, 1200);
 }
 
+function detectSpeechLocale(text: string): string {
+  if (/[\u0D80-\u0DFF]/.test(text)) return "si-LK";
+  if (/[\u0B80-\u0BFF]/.test(text)) return "ta-IN";
+  if (/[\u0900-\u097F]/.test(text)) return "hi-IN";
+  return "en-US";
+}
+
 type Source = "server" | "browser" | null;
 
-export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, voiceName = "") {
+export function useSpeaker(
+  getToken: () => Promise<string>,
+  serverTts: boolean,
+  voiceName = "",
+  speed = 1
+) {
   const [speaking, setSpeaking] = useState(false);
   const [paused, setPaused] = useState(false);
   const [source, setSource] = useState<Source>(null);
@@ -83,14 +95,16 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, 
   }, []);
 
   const speakBrowser = useCallback(
-    (text: string, run: number) => {
+    (text: string, run: number, onFinish?: () => void) => {
       const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
       if (!synth) {
         setSpeaking(false);
+        onFinish?.();
         return;
       }
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = /[\u0D80-\u0DFF]/.test(text) ? "si-LK" : "en-US";
+      u.lang = detectSpeechLocale(text);
+      u.rate = Math.min(1.5, Math.max(0.75, speed));
       const chosen = voiceName ? synth.getVoices().find((v) => v.voiceURI === voiceName) : undefined;
       if (chosen) {
         u.voice = chosen;
@@ -108,6 +122,7 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, 
           setSpeaking(false);
           setPaused(false);
           setSource(null);
+          onFinish?.();
         }
       };
       sourceRef.current = "browser";
@@ -119,14 +134,17 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, 
       decay();
       synth.speak(u);
     },
-    [voiceName]
+    [voiceName, speed]
   );
 
   const speak = useCallback(
-    async (markdown: string) => {
+    async (markdown: string, opts?: { onEnded?: () => void }) => {
       stop();
       const text = plainForSpeech(markdown);
-      if (!text) return;
+      if (!text) {
+        opts?.onEnded?.();
+        return;
+      }
       const run = ++runRef.current;
       pausedRef.current = false;
       setPaused(false);
@@ -145,6 +163,7 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, 
 
           const src = ctx.createBufferSource();
           src.buffer = buf;
+          src.playbackRate.value = Math.min(1.5, Math.max(0.75, speed));
           const analyser = ctx.createAnalyser();
           analyser.fftSize = 512;
           src.connect(analyser);
@@ -175,6 +194,7 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, 
               setSpeaking(false);
               setPaused(false);
               setSource(null);
+              opts?.onEnded?.();
             }
           };
 
@@ -186,12 +206,11 @@ export function useSpeaker(getToken: () => Promise<string>, serverTts: boolean, 
           return;
         } catch (e: unknown) {
           if ((e as { name?: string })?.name === "AbortError" || runRef.current !== run) return;
-          // Fall through cleanly to browser voice if server TTS quota/network fails
         }
       }
-      if (runRef.current === run) speakBrowser(text, run);
+      if (runRef.current === run) speakBrowser(text, run, opts?.onEnded);
     },
-    [getToken, serverTts, speakBrowser, stop]
+    [getToken, serverTts, speakBrowser, speed, stop]
   );
 
   return { speak, pause, resume, stop, speaking, paused, source };

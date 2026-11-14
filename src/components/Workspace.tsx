@@ -4,13 +4,12 @@ import Link from "next/link";
 import { AlertTriangle, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { useChatEngine } from "@/hooks/useChatEngine";
 import { usePreferences } from "@/hooks/usePreferences";
-import { ApiClientError, fetchConfig, fetchModels, fetchSession } from "@/lib/api";
+import { ApiClientError, fetchConfig, fetchSession } from "@/lib/api";
 import type { UserProfile } from "@/lib/auth";
 import { dictionaries } from "@/lib/i18n";
 import type {
   ChatMessage,
   FeatureKey,
-  ModelCatalogItem,
   PublicConfig,
   SessionInfo
 } from "@/lib/types";
@@ -45,11 +44,15 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionError, setSessionError] = useState<{ code: string; message: string } | null>(null);
-  const [modelsCatalog, setModelsCatalog] = useState<ModelCatalogItem[]>([]);
   const [useSearch, setUseSearch] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<Record<string, boolean>>({});
   const [refreshingGate, setRefreshingGate] = useState(false);
+
+  const [jarvisOpen, setJarvisOpen] = useState(false);
+  const [voiceAppendText, setVoiceAppendText] = useState("");
+  const jarvisOpenRef = useRef(false);
+  jarvisOpenRef.current = jarvisOpen;
 
   const loadConfig = useCallback(async () => {
     try {
@@ -60,23 +63,16 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     }
   }, []);
 
-  const loadSessionAndModels = useCallback(async () => {
+  const loadSession = useCallback(async () => {
     try {
       const tok = await getToken();
-      const [sessRes, modelsRes] = await Promise.allSettled([fetchSession(tok), fetchModels(tok)]);
-      if (sessRes.status === "fulfilled") {
-        setSession(sessRes.value);
-        setSessionError(null);
-      } else if (sessRes.reason instanceof ApiClientError) {
-        if (sessRes.reason.status === 403) {
-          setSessionError({ code: sessRes.reason.code, message: sessRes.reason.message });
-        }
+      const sess = await fetchSession(tok);
+      setSession(sess);
+      setSessionError(null);
+    } catch (reason) {
+      if (reason instanceof ApiClientError && reason.status === 403) {
+        setSessionError({ code: reason.code, message: reason.message });
       }
-      if (modelsRes.status === "fulfilled" && modelsRes.value.catalog.length) {
-        setModelsCatalog(modelsRes.value.catalog);
-      }
-    } catch {
-      /* ignore */
     }
   }, [getToken]);
 
@@ -91,7 +87,7 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
 
   useEffect(() => {
     loadConfig();
-    loadSessionAndModels();
+    loadSession();
 
     const timer = setInterval(() => {
       loadConfig();
@@ -99,7 +95,7 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
 
     const onFocus = () => {
       loadConfig();
-      loadSessionAndModels();
+      loadSession();
     };
     window.addEventListener("focus", onFocus);
 
@@ -107,7 +103,7 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
       clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [loadConfig, loadSessionAndModels]);
+  }, [loadConfig, loadSession]);
 
   const { prefs, setPref } = usePreferences(user.uid, {
     defaultTheme: config?.defaultTheme,
@@ -133,7 +129,8 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
   const speaker = useSpeaker(
     getToken,
     Boolean(config?.ttsServer) && effectiveFeatures.tts,
-    prefs.voiceName
+    prefs.voiceName,
+    prefs.voiceSpeed
   );
 
   useEffect(() => {
@@ -151,16 +148,45 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     (msg: ChatMessage) => {
       if (!effectiveFeatures.tts) return;
       setSpeakingMsgId(msg.id);
-      speaker.speak(msg.content);
+      void speaker.speak(msg.content);
     },
     [effectiveFeatures.tts, speaker]
   );
 
   const sendQueueRef = useRef<((text: string) => void) | null>(null);
+  const startMicRef = useRef<(() => void) | null>(null);
 
-  const mic = useSpeechRecognition(prefs.voiceLang, (spoken) => {
-    if (spoken.trim()) sendQueueRef.current?.(spoken.trim());
-  });
+  const mic = useSpeechRecognition(
+    prefs.voiceLang,
+    (spoken) => {
+      const trimmed = spoken.trim();
+      if (!trimmed) return;
+      if (jarvisOpenRef.current) {
+        sendQueueRef.current?.(trimmed);
+      } else {
+        setVoiceAppendText(trimmed);
+      }
+    },
+    {
+      getToken,
+      transcribeServer: Boolean(config?.transcribeServer)
+    }
+  );
+  startMicRef.current = mic.start;
+
+  const speakWithJarvisLoop = useCallback(
+    (markdown: string, opts?: { onEnded?: () => void }) => {
+      return speaker.speak(markdown, {
+        onEnded: () => {
+          opts?.onEnded?.();
+          if (jarvisOpenRef.current && prefs.jarvisContinuous) {
+            startMicRef.current?.();
+          }
+        }
+      });
+    },
+    [prefs.jarvisContinuous, speaker]
+  );
 
   const engine = useChatEngine({
     uid: user.uid,
@@ -171,13 +197,34 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     listening: mic.listening,
     speaking: speaker.speaking,
     paused: speaker.paused,
-    speak: speaker.speak,
+    speak: speakWithJarvisLoop,
     stopSpeaking: handleStopSpeak
   });
 
   sendQueueRef.current = (spoken: string) => {
-    engine.sendMessage(spoken, [], useSearch && effectiveFeatures.webSearch, true);
+    void engine.sendMessage(spoken, [], useSearch && effectiveFeatures.webSearch, true);
   };
+
+  const handleOpenJarvis = useCallback(() => {
+    handleStopSpeak();
+    setJarvisOpen(true);
+    mic.start();
+  }, [handleStopSpeak, mic]);
+
+  const handleCloseJarvis = useCallback(() => {
+    setJarvisOpen(false);
+    mic.cancel();
+    handleStopSpeak();
+  }, [handleStopSpeak, mic]);
+
+  const handleJarvisInterrupt = useCallback(() => {
+    handleStopSpeak();
+    mic.start();
+  }, [handleStopSpeak, mic]);
+
+  const consumedVoiceAppend = useCallback(() => {
+    setVoiceAppendText("");
+  }, []);
 
   const visibleAnnouncements: PublicConfig["announcements"] = useMemo(() => {
     return (config?.announcements || []).filter((a) => !dismissedAnnouncements[a.id]);
@@ -197,9 +244,9 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
 
   const refreshStatus = useCallback(async () => {
     setRefreshingGate(true);
-    await Promise.all([loadConfig(), loadSessionAndModels()]);
+    await Promise.all([loadConfig(), loadSession()]);
     setRefreshingGate(false);
-  }, [loadConfig, loadSessionAndModels]);
+  }, [loadConfig, loadSession]);
 
   if (isMobile === null) {
     return (
@@ -294,7 +341,6 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     announcements: visibleAnnouncements,
     onDismissAnnouncement: dismissAnnouncement,
     ownerMaintenanceBanner,
-    modelsCatalog,
     online,
     prefs,
     setPref,
@@ -302,6 +348,11 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     convsHasMore: engine.convsHasMore,
     loadMoreConvs: engine.loadMoreConvs,
     activeId: engine.activeId,
+    activeProject: engine.activeProject,
+    activeProjectId: engine.activeProjectId,
+    setActiveProjectId: engine.setActiveProjectId,
+    projects: engine.projects,
+    library: engine.library,
     messages: engine.messages,
     msgsLoading: engine.msgsLoading,
     msgsHasMore: engine.msgsHasMore,
@@ -309,18 +360,26 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     loadOlderMessages: engine.loadOlderMessages,
     memory: engine.memory,
     busy: engine.busy,
+    activeCapability: engine.activeCapability,
     error: engine.error,
-    fallbackNotice: engine.fallbackNotice,
     clearError: engine.clearError,
-    clearFallbackNotice: engine.clearFallbackNotice,
     startNewChat: engine.startNewChat,
     selectConversation: engine.selectConversation,
     sendMessage: engine.sendMessage,
     editAndResendMessage: engine.editAndResendMessage,
     stopGeneration: engine.stopGeneration,
     regenerateMessage: engine.regenerateMessage,
+    continueMessage: engine.continueMessage,
+    setMessageFeedback: engine.setMessageFeedback,
     renameConversation: engine.renameConversation,
+    togglePinConversation: engine.togglePinConversation,
+    assignToProject: engine.assignToProject,
     deleteConversation: engine.deleteConversation,
+    saveItemToLibrary: engine.saveItemToLibrary,
+    removeLibraryItem: engine.removeLibraryItem,
+    createProject: engine.createProject,
+    updateProject: engine.updateProject,
+    deleteProject: engine.deleteProject,
     speaking: speaker.speaking,
     paused: speaker.paused,
     speakingMsgId,
@@ -331,12 +390,20 @@ export default function Workspace({ user, getToken, onLogout }: Props) {
     micSupported: mic.supported && effectiveFeatures.voiceInput,
     micPermission: mic.permission,
     listening: mic.listening,
+    transcribing: mic.transcribing,
+    detectedLanguage: mic.detectedLanguage,
     interim: mic.interim,
     micError: mic.error,
     startMic: mic.start,
     stopMic: mic.stop,
     cancelMic: mic.cancel,
     clearMicError: mic.clearError,
+    voiceAppendText,
+    onConsumedVoiceAppend: consumedVoiceAppend,
+    jarvisOpen,
+    onOpenJarvis: handleOpenJarvis,
+    onCloseJarvis: handleCloseJarvis,
+    onJarvisInterrupt: handleJarvisInterrupt,
     useSearch: useSearch && effectiveFeatures.webSearch,
     setUseSearch
   };

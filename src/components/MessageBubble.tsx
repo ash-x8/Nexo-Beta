@@ -4,20 +4,25 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import {
+  BookmarkPlus,
   Check,
   Copy,
+  Download,
   ExternalLink,
   FileText,
   Pause,
   Pencil,
   Play,
   RotateCcw,
+  Sparkles,
   Square,
+  ThumbsDown,
+  ThumbsUp,
   Volume2,
   X
 } from "lucide-react";
 import type { Dict } from "@/lib/i18n";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, GeneratedImageArtifact, NexoTaskType } from "@/lib/types";
 
 interface Props {
   msg: ChatMessage;
@@ -32,8 +37,26 @@ interface Props {
   onResume: () => void;
   onStopSpeak: () => void;
   onRegenerate: (msgId: string) => void;
+  onContinue?: () => void;
+  onFeedback?: (msgId: string, feedback: "up" | "down" | null) => void;
+  onSaveImageToLibrary?: (img: GeneratedImageArtifact) => void;
+  onSaveResponseToLibrary?: (msg: ChatMessage) => void;
   onEditResend?: (msgId: string, newContent: string) => void;
 }
+
+const CAPABILITY_LABEL: Partial<Record<NexoTaskType, string>> = {
+  coding: "Code",
+  reasoning: "Reasoning",
+  math: "Math",
+  writing: "Writing",
+  translation: "Translation",
+  summarization: "Summary",
+  imageGen: "Image Studio",
+  imageUnderstanding: "Vision",
+  audioProcessing: "Audio",
+  voiceConversation: "Jarvis Voice",
+  webSearch: "Web Research"
+};
 
 function extractText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -94,6 +117,15 @@ function formatTime(ms: number): string {
   }
 }
 
+function triggerImageDownload(img: GeneratedImageArtifact) {
+  const a = document.createElement("a");
+  a.href = img.dataUrl;
+  a.download = `nexo-${img.id.slice(0, 8)}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export const MessageBubble = memo(function MessageBubble({
   msg,
   t,
@@ -107,14 +139,21 @@ export const MessageBubble = memo(function MessageBubble({
   onResume,
   onStopSpeak,
   onRegenerate,
+  onContinue,
+  onFeedback,
+  onSaveImageToLibrary,
+  onSaveResponseToLibrary,
   onEditResend
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [savedNote, setSavedNote] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(msg.content);
+  const [lightboxImg, setLightboxImg] = useState<GeneratedImageArtifact | null>(null);
 
   const isUser = msg.role === "user";
   const streamingEmpty = !isUser && msg.status === "streaming" && !msg.content;
+  const capLabel = !isUser && msg.capability ? CAPABILITY_LABEL[msg.capability] : undefined;
 
   const copyAll = () => {
     if (!msg.content) return;
@@ -146,10 +185,10 @@ export const MessageBubble = memo(function MessageBubble({
             <span>{t.editedNote}</span>
           </>
         )}
-        {!isUser && msg.modelUsed && (
+        {capLabel && (
           <>
             <span aria-hidden="true">·</span>
-            <span className="mono" style={{ fontSize: 11 }}>{msg.modelUsed}</span>
+            <span style={{ color: "var(--accent-blue)" }}>{capLabel}</span>
           </>
         )}
       </div>
@@ -256,6 +295,49 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         ) : null}
 
+        {msg.images && msg.images.length > 0 && (
+          <div className="nx-msg-images">
+            {msg.images.map((img) => (
+              <div key={img.id} className="nx-msg-img-card">
+                <button
+                  type="button"
+                  className="nx-msg-img-btn"
+                  onClick={() => setLightboxImg(img)}
+                  aria-label={img.prompt}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.dataUrl} alt={img.prompt} />
+                </button>
+                <div className="nx-msg-img-foot">
+                  <span className="tabular">{img.aspectRatio}</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      className="nx-tiny-btn"
+                      onClick={() => triggerImageDownload(img)}
+                      aria-label={t.download}
+                      title={t.download}
+                    >
+                      <Download size={14} />
+                    </button>
+                    {onSaveImageToLibrary && (
+                      <button
+                        type="button"
+                        className="nx-tiny-btn"
+                        onClick={() => onSaveImageToLibrary(img)}
+                        aria-label={t.saveToLibrary}
+                        title={t.saveToLibrary}
+                      >
+                        <BookmarkPlus size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {msg.sources && msg.sources.length > 0 && (
           <div className="nx-sources">
             <div className="nx-sources-label">{t.sources}</div>
@@ -348,6 +430,101 @@ export const MessageBubble = memo(function MessageBubble({
               <span>{msg.status === "error" || msg.status === "stopped" ? t.retry : t.regenerate}</span>
             </button>
           )}
+
+          {canRegenerate && onContinue && (msg.status === "stopped" || msg.content.length > 500) && (
+            <button type="button" className="nx-action-btn" disabled={isBusy} onClick={onContinue}>
+              <Sparkles size={13} />
+              <span>{t.continueGen}</span>
+            </button>
+          )}
+
+          {onSaveResponseToLibrary && msg.content && (
+            <button
+              type="button"
+              className="nx-action-btn"
+              onClick={() => {
+                onSaveResponseToLibrary(msg);
+                setSavedNote(true);
+                setTimeout(() => setSavedNote(false), 1600);
+              }}
+            >
+              {savedNote ? <Check size={13} /> : <BookmarkPlus size={13} />}
+              <span>{savedNote ? t.savedNote : t.saveToLibrary}</span>
+            </button>
+          )}
+
+          {onFeedback && msg.content && (
+            <>
+              <button
+                type="button"
+                className={`nx-action-btn ${msg.feedback === "up" ? "active" : ""}`}
+                onClick={() => onFeedback(msg.id, msg.feedback === "up" ? null : "up")}
+                aria-label={t.helpful}
+                title={t.helpful}
+              >
+                <ThumbsUp size={13} />
+              </button>
+              <button
+                type="button"
+                className={`nx-action-btn ${msg.feedback === "down" ? "active" : ""}`}
+                onClick={() => onFeedback(msg.id, msg.feedback === "down" ? null : "down")}
+                aria-label={t.notHelpful}
+                title={t.notHelpful}
+              >
+                <ThumbsDown size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {lightboxImg && (
+        <div
+          className="nx-lightbox-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div className="nx-lightbox-card" onClick={(e) => e.stopPropagation()}>
+            <div className="nx-modal-head">
+              <h2 style={{ fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {lightboxImg.prompt}
+              </h2>
+              <button type="button" className="nx-tiny-btn" onClick={() => setLightboxImg(null)} aria-label={t.close}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="nx-lightbox-body">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={lightboxImg.dataUrl} alt={lightboxImg.prompt} />
+            </div>
+            <div className="nx-lightbox-foot">
+              <span className="tabular" style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+                NEXO Image Studio · {lightboxImg.aspectRatio}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                {onSaveImageToLibrary && (
+                  <button
+                    type="button"
+                    className="nx-secondary-btn"
+                    onClick={() => onSaveImageToLibrary(lightboxImg)}
+                  >
+                    <BookmarkPlus size={15} />
+                    <span>{t.saveToLibrary}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="nx-secondary-btn"
+                  style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)" }}
+                  onClick={() => triggerImageDownload(lightboxImg)}
+                >
+                  <Download size={15} />
+                  <span>{t.download}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </article>

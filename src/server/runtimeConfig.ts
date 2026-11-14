@@ -66,7 +66,7 @@ export function buildDefaultSnapshot(): RuntimeConfigSnapshot {
       tts: !!e.geminiKey,
       jarvisMode: true,
       attachments: true,
-      imageGeneration: false,
+      imageGeneration: !!(e.geminiKey || (e.compatBase && e.compatKey)),
       webSearch: !!e.tavilyKey,
       personalMemory: true,
       conversationHistory: true,
@@ -90,13 +90,17 @@ export function buildDefaultSnapshot(): RuntimeConfigSnapshot {
           priority: 1,
           defaultModel: e.geminiModel || "gemini-2.5-flash",
           ttsModel: e.geminiTtsModel || "gemini-2.5-flash-preview-tts",
-          ttsVoice: e.geminiTtsVoice || "Kore"
+          ttsVoice: e.geminiTtsVoice || "Kore",
+          imageModel: e.geminiImageModel || "gemini-2.5-flash-image",
+          timeoutMs: e.timeoutMs
         },
         "openai-compatible": {
           enabled: !!(e.compatBase && e.compatKey),
           displayName: "OpenAI-Compatible API",
           priority: 2,
-          defaultModel: e.compatModel || ""
+          defaultModel: e.compatModel || "",
+          imageModel: e.compatImageModel || "gpt-image-1",
+          timeoutMs: e.timeoutMs
         }
       },
       fallbackOrder: [...GEMINI_FREE_FALLBACK_ORDER],
@@ -254,7 +258,7 @@ export function resolveEffectiveFeatures(
       val = globalFlags[k] ? userOverrides[k]! : false;
     }
     if (k === "webSearch" && !e.tavilyKey) val = false;
-    if (k === "imageGeneration") val = false; // No backend image generation endpoint exists in this build
+    if (k === "imageGeneration" && !e.geminiKey && !(e.compatBase && e.compatKey)) val = false;
     out[k] = Boolean(val);
   }
   return out;

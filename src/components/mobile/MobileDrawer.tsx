@@ -1,10 +1,10 @@
 "use client";
 import { useEffect } from "react";
 import Link from "next/link";
-import { Compass, MessageSquare, Plus, Settings, ShieldCheck, X } from "lucide-react";
+import { AudioLines, Compass, Info, MessageSquare, Pin, Plus, Settings, ShieldCheck, X } from "lucide-react";
 import type { UserProfile } from "@/lib/auth";
 import type { Dict } from "@/lib/i18n";
-import type { Conversation, ModelCatalogItem } from "@/lib/types";
+import type { Conversation } from "@/lib/types";
 import ModelSelector from "../ModelSelector";
 
 interface Props {
@@ -17,12 +17,9 @@ interface Props {
   user: UserProfile;
   convs: Conversation[];
   activeId: string | null;
-  modelsCatalog: ModelCatalogItem[];
-  selectedModel: string;
-  defaultModel: string;
-  onSelectModel: (id: string) => void;
   onNewChat: () => void;
   onSelectConv: (id: string) => void;
+  onOpenJarvis: () => void;
   onOpenExplore: () => void;
   onOpenSettings: () => void;
 }
@@ -37,12 +34,9 @@ export default function MobileDrawer({
   user,
   convs,
   activeId,
-  modelsCatalog,
-  selectedModel,
-  defaultModel,
-  onSelectModel,
   onNewChat,
   onSelectConv,
+  onOpenJarvis,
   onOpenExplore,
   onOpenSettings
 }: Props) {
@@ -97,6 +91,18 @@ export default function MobileDrawer({
             className="nx-mob-drawer-item"
             onClick={() => {
               onClose();
+              onOpenJarvis();
+            }}
+          >
+            <AudioLines size={18} />
+            <span>{t.quickVoice}</span>
+          </button>
+
+          <button
+            type="button"
+            className="nx-mob-drawer-item"
+            onClick={() => {
+              onClose();
               onOpenExplore();
             }}
           >
@@ -115,21 +121,22 @@ export default function MobileDrawer({
             <Settings size={18} />
             <span>{t.settings}</span>
           </button>
+
+          <Link
+            href="/about"
+            className="nx-mob-drawer-item"
+            style={{ textDecoration: "none" }}
+            onClick={onClose}
+          >
+            <Info size={18} />
+            <span>{t.about}</span>
+          </Link>
         </div>
 
-        {modelsCatalog.length > 0 && (
-          <div className="nx-mob-drawer-section">
-            <span className="nx-group-label" style={{ margin: "0 0 6px" }}>{t.modelLabel}</span>
-            <ModelSelector
-              t={t}
-              selectedModel={selectedModel}
-              defaultModel={defaultModel}
-              catalog={modelsCatalog}
-              onSelect={onSelectModel}
-              compact
-            />
-          </div>
-        )}
+        <div className="nx-mob-drawer-section">
+          <span className="nx-group-label" style={{ margin: "0 0 6px", display: "block" }}>{t.modelLabel}</span>
+          <ModelSelector t={t} compact />
+        </div>
 
         <div className="nx-mob-drawer-scroll">
           <span className="nx-group-label" style={{ margin: "4px 2px 6px" }}>{t.recentChats}</span>
@@ -148,7 +155,7 @@ export default function MobileDrawer({
                   onSelectConv(c.id);
                 }}
               >
-                <MessageSquare size={15} />
+                {c.pinned ? <Pin size={14} /> : <MessageSquare size={15} />}
                 <span>{c.title}</span>
               </button>
             ))

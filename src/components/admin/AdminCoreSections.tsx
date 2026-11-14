@@ -2,7 +2,15 @@
 import { useEffect, useState } from "react";
 import { Activity, CheckCircle2, Cpu, RefreshCw, RotateCcw, Save, ShieldAlert, Wrench } from "lucide-react";
 import { adminApi } from "@/lib/api";
-import type { FeatureFlags, FeatureKey, GlobalConfig, MaintenanceConfig, ModelOverride, ProviderConfig } from "@/lib/types";
+import type {
+  FeatureFlags,
+  FeatureKey,
+  GlobalConfig,
+  MaintenanceConfig,
+  ModelOverride,
+  ProviderConfig,
+  ProviderHealthTelemetry
+} from "@/lib/types";
 import { BreakdownCard, DailyBarChart } from "./AdminChartsAndConfirm";
 import type { AdminOverviewResponse, ConfirmPromptState } from "./adminTypes";
 
@@ -36,7 +44,7 @@ export function OverviewSection({ overview }: { overview: AdminOverviewResponse 
           </div>
           <div className="nx-kpi-value">{summary.requestsWindow.toLocaleString()}</div>
           <div className="nx-kpi-sub">
-            {summary.ttsWindow} TTS · {summary.voiceWindow} voice
+            {summary.ttsWindow} TTS · {summary.voiceWindow} voice · {summary.imageRequestsWindow ?? 0} images
           </div>
         </div>
 
@@ -83,6 +91,10 @@ export function OverviewSection({ overview }: { overview: AdminOverviewResponse 
         <BreakdownCard title="Requests by Provider" entries={byProvider} />
         <BreakdownCard title="Requests by Model" entries={byModel} />
       </div>
+
+      {overview.byTask && Object.keys(overview.byTask).length > 0 && (
+        <BreakdownCard title="Requests by Capability (NEXO Auto-Router)" entries={overview.byTask} />
+      )}
 
       <div className="nx-admin-card">
         <div className="nx-admin-card-head">
@@ -442,6 +454,8 @@ export function ProvidersSection({ overview, token, onRefresh, onToast, onConfir
   const [fallbackText, setFallbackText] = useState(overview.runtime.providerConfig.fallbackOrder.join(", "));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthRows, setHealthRows] = useState<ProviderHealthTelemetry[]>(overview.system.providerHealthDetails || []);
   const [testResult, setTestResult] = useState<{
     provider: string;
     ok: boolean;
@@ -453,7 +467,23 @@ export function ProvidersSection({ overview, token, onRefresh, onToast, onConfir
   useEffect(() => {
     setDraft(overview.runtime.providerConfig);
     setFallbackText(overview.runtime.providerConfig.fallbackOrder.join(", "));
-  }, [overview.runtime.providerConfig]);
+    if (overview.system.providerHealthDetails) {
+      setHealthRows(overview.system.providerHealthDetails);
+    }
+  }, [overview.runtime.providerConfig, overview.system.providerHealthDetails]);
+
+  const refreshHealth = async () => {
+    setHealthLoading(true);
+    try {
+      const res = await adminApi.getHealth(token);
+      setHealthRows(res.providers);
+      onToast("ok", "Provider health telemetry refreshed.");
+    } catch (e) {
+      onToast("err", (e as Error).message);
+    } finally {
+      setHealthLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -586,6 +616,38 @@ export function ProvidersSection({ overview, token, onRefresh, onToast, onConfir
                 }
               />
             </div>
+            <div className="nx-admin-field">
+              <label htmlFor="prov-gem-img-model">Image Model</label>
+              <input
+                id="prov-gem-img-model"
+                className="nx-input mono"
+                placeholder="imagen-3.0-generate-002"
+                value={gem.imageModel || ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    providers: { ...draft.providers, gemini: { ...gem, imageModel: e.target.value } }
+                  })
+                }
+              />
+            </div>
+            <div className="nx-admin-field">
+              <label htmlFor="prov-gem-timeout">Timeout (ms)</label>
+              <input
+                id="prov-gem-timeout"
+                type="number"
+                min={3000}
+                max={60000}
+                className="nx-input tabular"
+                value={gem.timeoutMs ?? 20000}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    providers: { ...draft.providers, gemini: { ...gem, timeoutMs: Number(e.target.value) } }
+                  })
+                }
+              />
+            </div>
           </div>
 
           <button
@@ -641,25 +703,45 @@ export function ProvidersSection({ overview, token, onRefresh, onToast, onConfir
             />
           </div>
 
-          <div className="nx-admin-field">
-            <label htmlFor="prov-compat-prio">Priority Order</label>
-            <input
-              id="prov-compat-prio"
-              type="number"
-              min={1}
-              max={10}
-              className="nx-input tabular"
-              value={compat.priority}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  providers: {
-                    ...draft.providers,
-                    "openai-compatible": { ...compat, priority: Number(e.target.value) }
-                  }
-                })
-              }
-            />
+          <div className="nx-admin-form-grid">
+            <div className="nx-admin-field">
+              <label htmlFor="prov-compat-prio">Priority Order</label>
+              <input
+                id="prov-compat-prio"
+                type="number"
+                min={1}
+                max={10}
+                className="nx-input tabular"
+                value={compat.priority}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    providers: {
+                      ...draft.providers,
+                      "openai-compatible": { ...compat, priority: Number(e.target.value) }
+                    }
+                  })
+                }
+              />
+            </div>
+            <div className="nx-admin-field">
+              <label htmlFor="prov-compat-img-model">Image Model</label>
+              <input
+                id="prov-compat-img-model"
+                className="nx-input mono"
+                placeholder="gpt-image-1"
+                value={compat.imageModel || ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    providers: {
+                      ...draft.providers,
+                      "openai-compatible": { ...compat, imageModel: e.target.value }
+                    }
+                  })
+                }
+              />
+            </div>
           </div>
 
           <button
@@ -671,6 +753,78 @@ export function ProvidersSection({ overview, token, onRefresh, onToast, onConfir
             <Activity size={15} />
             <span>{testing === "openai-compatible" ? "Testing…" : "Test Connectivity"}</span>
           </button>
+        </div>
+      </div>
+
+      <div className="nx-admin-card">
+        <div className="nx-admin-card-head">
+          <div>
+            <h3>NEXO Orchestrator — Live Provider Health & Circuit Breakers</h3>
+            <p className="nx-field-hint">
+              Real-time runtime metrics from NEXO v1 failover & health registry. Quota displays &ldquo;unknown&rdquo; unless the upstream API signals rate exhaustion.
+            </p>
+          </div>
+          <button type="button" className="nx-secondary-btn" disabled={healthLoading} onClick={refreshHealth}>
+            <RefreshCw size={14} />
+            <span>{healthLoading ? "Checking…" : "Refresh Health"}</span>
+          </button>
+        </div>
+
+        <div className="nx-table-wrap">
+          <table className="nx-table">
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Health</th>
+                <th>Circuit</th>
+                <th>Avg / Recent Latency</th>
+                <th>Avg TTFT</th>
+                <th>Rate Limits</th>
+                <th>Fallbacks</th>
+                <th>Quota</th>
+                <th>Last Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {healthRows.map((h) => {
+                const statusClass =
+                  h.status === "healthy"
+                    ? "ok"
+                    : h.status === "degraded" || h.status === "rate_limited"
+                      ? "warn"
+                      : h.status === "unavailable"
+                        ? "err"
+                        : "";
+                return (
+                  <tr key={h.providerId}>
+                    <td>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <strong>{h.displayName}</strong>
+                        <span className="nx-field-hint mono">
+                          {h.providerId} · {h.configured ? "Key configured" : "Not configured"}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`nx-status-text ${statusClass}`} style={{ textTransform: "uppercase", fontSize: 11.5 }}>
+                        {h.status}
+                      </span>
+                    </td>
+                    <td className="mono">{h.circuitState}</td>
+                    <td className="tabular">
+                      {h.avgLatencyMs != null ? `${h.avgLatencyMs}ms` : "—"} /{" "}
+                      {h.recentLatencyMs != null ? `${h.recentLatencyMs}ms` : "—"}
+                    </td>
+                    <td className="tabular">{h.avgTtftMs != null ? `${h.avgTtftMs}ms` : "—"}</td>
+                    <td className="tabular">{h.rateLimitHits}</td>
+                    <td className="tabular">{h.fallbackTriggeredCount}</td>
+                    <td className="mono">{h.quotaStatus}</td>
+                    <td className="nx-field-hint">{h.lastErrorCategory || "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1001,9 +1155,8 @@ const FEATURE_META: { key: FeatureKey; label: string; desc: string; unavailable?
   { key: "conversationHistory", label: "Conversation History Sidebar", desc: "Saved conversation list & search across sessions." },
   {
     key: "imageGeneration",
-    label: "Image Generation",
-    desc: "Not implemented in this build; kept disabled so the UI never advertises an unavailable capability.",
-    unavailable: true
+    label: "Image Generation (NEXO Image Studio)",
+    desc: "Enables real image creation and reference editing when an image-capable AI provider key is configured."
   }
 ];
 
@@ -1024,7 +1177,7 @@ export function FeaturesSection({ overview, token, onRefresh, onToast, onConfirm
         tts: draft.tts,
         jarvisMode: draft.jarvisMode,
         attachments: draft.attachments,
-        imageGeneration: false,
+        imageGeneration: draft.imageGeneration,
         webSearch: draft.webSearch,
         personalMemory: draft.personalMemory,
         conversationHistory: draft.conversationHistory

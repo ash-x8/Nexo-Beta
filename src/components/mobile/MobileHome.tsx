@@ -1,6 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
-import { Compass, Menu, MessageSquarePlus, Mic, X } from "lucide-react";
+import { FolderKanban, ImagePlus, Menu, MessageSquarePlus, Mic, Pin, X } from "lucide-react";
 import type { AvatarState } from "@/lib/avatarBus";
 import type { Dict } from "@/lib/i18n";
 import { promptsFor } from "@/lib/prompts";
@@ -25,8 +25,9 @@ interface Props {
   micSupported: boolean;
   onOpenMenu: () => void;
   onNewChat: () => void;
-  onStartVoice: () => void;
-  onOpenExplore: () => void;
+  onOpenJarvis: () => void;
+  onOpenImageStudio: () => void;
+  onOpenProjects: () => void;
   onSeeAllChats: () => void;
   onSelectConv: (id: string) => void;
   onPickPrompt: (prompt: string) => void;
@@ -56,8 +57,9 @@ export default function MobileHome({
   micSupported,
   onOpenMenu,
   onNewChat,
-  onStartVoice,
-  onOpenExplore,
+  onOpenJarvis,
+  onOpenImageStudio,
+  onOpenProjects,
   onSeeAllChats,
   onSelectConv,
   onPickPrompt
@@ -120,20 +122,25 @@ export default function MobileHome({
         <p>{t.helloSub}</p>
       </section>
 
-      <div className="nx-mob-cta-row">
+      <div className="nx-mob-cta-row" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
         <button type="button" className="nx-mob-quick-btn" onClick={onNewChat}>
           <MessageSquarePlus size={20} />
           <span>{t.newChat.split(" ")[0]}</span>
         </button>
 
-        <button type="button" className="nx-mob-quick-btn" disabled={!micSupported} onClick={onStartVoice}>
+        <button type="button" className="nx-mob-quick-btn" disabled={!micSupported} onClick={onOpenJarvis}>
           <Mic size={20} />
           <span>{t.quickVoice}</span>
         </button>
 
-        <button type="button" className="nx-mob-quick-btn" onClick={onOpenExplore}>
-          <Compass size={20} />
-          <span>{t.navExplore}</span>
+        <button type="button" className="nx-mob-quick-btn" onClick={onOpenImageStudio}>
+          <ImagePlus size={20} />
+          <span>{t.quickImage}</span>
+        </button>
+
+        <button type="button" className="nx-mob-quick-btn" onClick={onOpenProjects}>
+          <FolderKanban size={20} />
+          <span>{t.quickDoc}</span>
         </button>
       </div>
 
@@ -149,7 +156,10 @@ export default function MobileHome({
             {convs.slice(0, 4).map((c) => (
               <button key={c.id} type="button" className="nx-mob-row" onClick={() => onSelectConv(c.id)}>
                 <div className="nx-mob-row-main">
-                  <span className="nx-mob-row-title">{c.title}</span>
+                  <span className="nx-mob-row-title">
+                    {c.pinned && <Pin size={12} style={{ marginRight: 5, display: "inline", verticalAlign: "middle", color: "var(--accent-blue)" }} />}
+                    {c.title}
+                  </span>
                   <span className="nx-mob-row-sub tabular">
                     {new Date(c.updatedAt).toLocaleDateString()}
                   </span>

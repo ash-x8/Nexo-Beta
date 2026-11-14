@@ -18,18 +18,56 @@ export const ChatMessageInputSchema = z.object({
 
 export const ChatBodySchema = z.object({
   messages: z.array(ChatMessageInputSchema).min(1).max(200),
-  language: z.enum(["en", "si", "auto"]).default("auto"),
+  language: z.enum(["en", "si", "ta", "hi", "auto"]).default("auto"),
   responseStyle: z.enum(["balanced", "concise", "detailed"]).default("balanced"),
+  responseTone: z.enum(["natural", "professional", "friendly", "technical"]).default("natural").optional(),
   nickname: z.string().max(60).optional(),
-  customInstructions: z.string().max(400).optional(),
-  memory: z.array(z.string().max(300)).max(20).default([]),
+  customInstructions: z.string().max(1200).optional(),
+  projectInstructions: z.string().max(1200).optional(),
+  conversationSummary: z.string().max(4000).optional(),
+  memory: z.array(z.string().max(300)).max(24).default([]),
   useSearch: z.boolean().default(false),
   voiceTriggered: z.boolean().optional(),
+  requestId: z.string().max(120).optional(),
   model: z.string().max(100).regex(/^[\w.\-:\/]+$/).optional()
 });
 
+export const NexoImageBodySchema = z.object({
+  prompt: z.string().trim().min(2).max(2000),
+  aspectRatio: z.enum(["1:1", "4:5", "3:2", "16:9", "9:16"]).default("1:1"),
+  stylePreset: z.enum(["auto", "photoreal", "editorial", "illustration", "concept", "minimal"]).default("auto"),
+  sourceImage: z
+    .object({
+      mime: z.string().regex(/^image\/(png|jpe?g|webp)$/),
+      data: z.string().min(10).max(12_000_000)
+    })
+    .optional(),
+  requestId: z.string().max(120).optional()
+});
+
+export const NexoTranscribeBodySchema = z.object({
+  audioBase64: z.string().min(16).max(16_000_000),
+  mimeType: z.string().min(5).max(80),
+  hintLanguage: z.enum(["auto", "en-US", "si-LK", "ta-IN", "hi-IN"]).default("auto")
+});
+
+export const NexoMemorySummarizeSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().max(20000)
+      })
+    )
+    .min(1)
+    .max(60),
+  previousSummary: z.string().max(4000).optional(),
+  existingFacts: z.array(z.string().max(300)).max(24).optional()
+});
+
 export const TtsBodySchema = z.object({
-  text: z.string().trim().min(1).max(1200)
+  text: z.string().trim().min(1).max(1200),
+  language: z.string().max(20).optional()
 });
 
 export const GlobalConfigUpdateSchema = z
@@ -83,7 +121,9 @@ export const ProviderEntrySchema = z.object({
   priority: z.number().int().min(1).max(10),
   defaultModel: z.string().trim().max(100),
   ttsModel: z.string().trim().max(100).optional(),
-  ttsVoice: z.string().trim().max(60).optional()
+  ttsVoice: z.string().trim().max(60).optional(),
+  imageModel: z.string().trim().max(100).optional(),
+  timeoutMs: z.number().int().min(5000).max(120000).optional()
 });
 
 export const ProviderConfigUpdateSchema = z
@@ -141,4 +181,6 @@ export const UserAdminPatchSchema = z.object({
 });
 
 export type ChatBodyInput = z.infer<typeof ChatBodySchema>;
+export type NexoImageBodyInput = z.infer<typeof NexoImageBodySchema>;
+export type NexoTranscribeBodyInput = z.infer<typeof NexoTranscribeBodySchema>;
 export type TtsBodyInput = z.infer<typeof TtsBodySchema>;

@@ -3,6 +3,7 @@ import { getSystemDailyMetrics, listUsersWithUsage } from "@/server/analytics";
 import { authConfigured, configuredProviders, missingConfigKeys, readEnv } from "@/server/env";
 import { ApiError, hasAdminCredentials, requireAdmin } from "@/server/firebaseAdmin";
 import { buildModelCatalog, getOverallProviderHealth } from "@/server/modelsRegistry";
+import { getProviderTelemetrySnapshot } from "@/server/nexo/healthRegistry";
 import { getRuntimeConfig } from "@/server/runtimeConfig";
 
 export const runtime = "nodejs";
@@ -40,6 +41,24 @@ export async function GET(req: Request) {
       true
     );
 
+    const pCfg = runtimeCfg.providerConfig.providers;
+    const providerHealthDetails = [
+      getProviderTelemetrySnapshot({
+        providerId: "gemini",
+        displayName: pCfg.gemini.displayName || "Gemini API",
+        enabled: pCfg.gemini.enabled,
+        configured: !!e.geminiKey,
+        capabilities: ["chat", "streaming", "vision", "pdf", "imageGen", "audioTranscribe", "tts"]
+      }),
+      getProviderTelemetrySnapshot({
+        providerId: "openai-compatible",
+        displayName: pCfg["openai-compatible"].displayName || "OpenAI-Compatible API",
+        enabled: pCfg["openai-compatible"].enabled,
+        configured: !!(e.compatBase && e.compatKey),
+        capabilities: ["chat", "streaming", "vision", "imageGen"]
+      })
+    ];
+
     const activeUsersCount = users.filter((u) => u.status === "active").length;
     const suspendedUsersCount = users.filter((u) => u.status !== "active").length;
     const totalEstimatedTokens = metrics.totals.estimatedInputTokens + metrics.totals.estimatedOutputTokens;
@@ -62,8 +81,9 @@ export async function GET(req: Request) {
           catalog.map((m) => m.id),
           defaultModel
         ),
+        providerHealthDetails,
         tokenAccuracyNote:
-          "Request, TTS, voice, failure, and rate-limit counts are exact server-recorded counters. Token counts are estimated locally (~4 chars/token) because upstream SSE streams do not always report billing tokens."
+          "Request, TTS, image, voice, failure, and rate-limit counts are exact server-recorded counters. Token counts are estimated locally (~4 chars/token) because upstream SSE streams do not always report billing tokens."
       },
       summary: {
         totalUsers: users.length,
@@ -72,6 +92,7 @@ export async function GET(req: Request) {
         requestsWindow: metrics.totals.requests,
         ttsWindow: metrics.totals.tts,
         voiceWindow: metrics.totals.voiceRequests,
+        imageRequestsWindow: metrics.totals.imageRequests,
         estimatedTokensWindow: totalEstimatedTokens,
         failedRequestsWindow: metrics.totals.failedRequests,
         rateLimitHitsWindow: metrics.totals.rateLimitHits,
@@ -81,6 +102,7 @@ export async function GET(req: Request) {
       daily: metrics.daily,
       byProvider: metrics.totals.byProvider,
       byModel: metrics.totals.byModel,
+      byTask: metrics.totals.tasks,
       modelCatalog: catalog,
       recentSecurityEvents: securityEvents.slice(0, 10)
     });

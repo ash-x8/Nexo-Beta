@@ -74,7 +74,7 @@ export function usePreferences(uid: string | undefined, runtimeDefaults?: Runtim
     });
   }, [uid, allowLangSwitch, defLang]);
 
-  // Apply theme + lang attribute cleanly
+  // Apply theme, personalization tokens + lang attribute cleanly
   useEffect(() => {
     const applyTheme = () => {
       const resolved =
@@ -84,9 +84,12 @@ export function usePreferences(uid: string | undefined, runtimeDefaults?: Runtim
             : "dark"
           : prefs.theme;
       document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.accent = prefs.accentColor;
+      document.documentElement.dataset.fontSize = prefs.fontSize;
+      document.documentElement.dataset.density = prefs.chatDensity;
       const meta = document.querySelector('meta[name="theme-color"]');
       if (meta) {
-        meta.setAttribute("content", resolved === "light" ? "#f4f7fb" : "#080d13");
+        meta.setAttribute("content", resolved === "light" ? "#f4f7fb" : "#080b10");
       }
     };
     applyTheme();
@@ -97,7 +100,7 @@ export function usePreferences(uid: string | undefined, runtimeDefaults?: Runtim
       mq.addEventListener("change", applyTheme);
       return () => mq.removeEventListener("change", applyTheme);
     }
-  }, [prefs.theme, prefs.ui]);
+  }, [prefs.theme, prefs.ui, prefs.accentColor, prefs.fontSize, prefs.chatDensity]);
 
   const setPref = useCallback(
     <K extends keyof Prefs>(key: K, value: Prefs[K]) => {

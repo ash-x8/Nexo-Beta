@@ -4,13 +4,16 @@ import type {
   Attachment,
   AuditLogEntry,
   ModelCatalogItem,
+  ProviderHealthTelemetry,
   PublicConfig,
   ReplyLang,
   ResponseStyle,
+  ResponseTone,
   SecurityEventEntry,
   SessionInfo,
   StreamEvent,
-  UsageInfo
+  UsageInfo,
+  VoiceInputLang
 } from "./types";
 
 export class ApiClientError extends Error {
@@ -24,12 +27,15 @@ export interface ChatRequest {
   messages: { role: "user" | "assistant"; content: string; attachments?: Attachment[] }[];
   language: ReplyLang;
   responseStyle?: ResponseStyle;
+  responseTone?: ResponseTone;
   nickname?: string;
   customInstructions?: string;
+  projectInstructions?: string;
+  conversationSummary?: string;
   memory: string[];
   useSearch: boolean;
   voiceTriggered?: boolean;
-  model?: string;
+  requestId?: string;
   signal: AbortSignal;
 }
 
@@ -46,7 +52,7 @@ export function parseNdjsonLine(raw: string): StreamEvent | null {
 export async function* streamChat(r: ChatRequest): AsyncGenerator<StreamEvent> {
   let res: Response;
   try {
-    res = await fetch("/api/chat", {
+    res = await fetch("/api/nexo/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -56,18 +62,21 @@ export async function* streamChat(r: ChatRequest): AsyncGenerator<StreamEvent> {
         messages: r.messages,
         language: r.language,
         responseStyle: r.responseStyle ?? "balanced",
+        responseTone: r.responseTone ?? "natural",
         nickname: r.nickname || undefined,
         customInstructions: r.customInstructions || undefined,
+        projectInstructions: r.projectInstructions || undefined,
+        conversationSummary: r.conversationSummary || undefined,
         memory: r.memory,
         useSearch: r.useSearch,
         voiceTriggered: r.voiceTriggered || undefined,
-        model: r.model || undefined
+        requestId: r.requestId || undefined
       }),
       signal: r.signal
     });
   } catch (e) {
     if (r.signal.aborted) throw e;
-    throw new ApiClientError("network", "You appear to be offline or the server is unreachable.", 0);
+    throw new ApiClientError("network", "You appear to be offline or NEXO is temporarily unreachable.", 0);
   }
 
   if (!res.ok || !res.body) {
@@ -106,8 +115,81 @@ export async function* streamChat(r: ChatRequest): AsyncGenerator<StreamEvent> {
   }
 }
 
+export interface ImageGeneratePayload {
+  prompt: string;
+  aspectRatio?: "1:1" | "4:5" | "3:2" | "16:9" | "9:16";
+  style?: "natural" | "photorealistic" | "illustration" | "minimal" | "3d" | "editorial";
+  referenceImageBase64?: string;
+  referenceImageMime?: string;
+}
+
+export interface ImageGenerateResult {
+  assistant: "NEXO v1";
+  mimeType: string;
+  dataUrl: string;
+  aspectRatio: "1:1" | "4:5" | "3:2" | "16:9" | "9:16";
+  revisedPrompt?: string;
+}
+
+export async function generateImage(
+  token: string,
+  payload: ImageGeneratePayload,
+  signal?: AbortSignal
+): Promise<ImageGenerateResult> {
+  const res = await fetch("/api/nexo/image", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload),
+    signal
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ApiClientError(
+      j?.error?.code || `http_${res.status}`,
+      j?.error?.message || "Image generation failed.",
+      res.status
+    );
+  }
+  return j as ImageGenerateResult;
+}
+
+export interface TranscribeResult {
+  assistant: "NEXO v1";
+  text: string;
+  detectedLanguage: "en" | "si" | "ta" | "hi" | "mixed" | "unknown";
+  languageLabel: string;
+}
+
+export async function transcribeAudio(
+  token: string,
+  payload: { audioBase64: string; mimeType: string; hintLanguage?: VoiceInputLang },
+  signal?: AbortSignal
+): Promise<TranscribeResult> {
+  const res = await fetch("/api/nexo/transcribe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload),
+    signal
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ApiClientError(
+      j?.error?.code || `http_${res.status}`,
+      j?.error?.message || "Voice transcription failed.",
+      res.status
+    );
+  }
+  return j as TranscribeResult;
+}
+
 export async function fetchTts(token: string, text: string, signal: AbortSignal): Promise<ArrayBuffer> {
-  const res = await fetch("/api/tts", {
+  const res = await fetch("/api/nexo/tts", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -121,6 +203,28 @@ export async function fetchTts(token: string, text: string, signal: AbortSignal)
     throw new ApiClientError(j?.error?.code || "tts", j?.error?.message || "Voice generation failed.", res.status);
   }
   return res.arrayBuffer();
+}
+
+export async function consolidateMemory(
+  token: string,
+  payload: {
+    existingSummary?: string;
+    existingMemories?: string[];
+    messages: { role: "user" | "assistant"; content: string }[];
+  }
+): Promise<{ summary: string; extractedFacts: { text: string; category: string }[] }> {
+  const res = await fetch("/api/nexo/memory", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    throw new ApiClientError(`http_${res.status}`, "Memory consolidation skipped.", res.status);
+  }
+  return res.json();
 }
 
 export interface ModelsResponse {
@@ -197,6 +301,11 @@ async function adminFetch<T>(token: string, path: string, init: RequestInit = {}
 export const adminApi = {
   getOverview: (token: string, days = 14) =>
     adminFetch<Record<string, unknown>>(token, `/api/admin/overview?days=${days}`),
+  getHealth: (token: string) =>
+    adminFetch<{ checkedAt: number; tavilyConfigured: boolean; providers: ProviderHealthTelemetry[] }>(
+      token,
+      "/api/admin/health"
+    ),
   updateConfig: (token: string, section: string, data: unknown) =>
     adminFetch<{ ok: boolean; section: string; data: unknown }>(token, "/api/admin/config", {
       method: "PUT",

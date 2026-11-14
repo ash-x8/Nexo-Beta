@@ -1,14 +1,14 @@
 {
   "name": "NEXO AI",
   "short_name": "NEXO",
-  "description": "Your Intelligent Digital Companion",
+  "description": "Beyond Intelligence. Beyond Limits.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#06070a",
-  "theme_color": "#06070a",
+  "background_color": "#080b10",
+  "theme_color": "#080b10",
   "categories": ["productivity", "utilities"],
   "icons": [
     {

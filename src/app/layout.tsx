@@ -11,23 +11,23 @@ const outfit = Outfit({ subsets: ["latin"], variable: "--font-display", display:
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
-const THEME_BOOT = `try{var p=JSON.parse(localStorage.getItem("nexo.prefs")||"{}");var t=p.theme||"dark";if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f7fa":"#080d13")}catch(e){document.documentElement.dataset.theme="dark"}`;
+const THEME_BOOT = `try{var p=JSON.parse(localStorage.getItem("nexo.prefs")||"{}");var t=p.theme||"dark";if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";var d=document.documentElement;d.dataset.theme=t;if(p.accentColor)d.dataset.accent=p.accentColor;if(p.fontSize)d.dataset.fontSize=p.fontSize;if(p.chatDensity)d.dataset.density=p.chatDensity;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f7fb":"#080b10")}catch(e){document.documentElement.dataset.theme="dark"}`;
 
 export const metadata: Metadata = {
   title: "NEXO AI",
-  description: "Your Intelligent Digital Companion — Personal AI Assistant with voice, vision, memory, and web search.",
+  description: "Beyond Intelligence. Beyond Limits. Unified AI Platform for intelligent conversation, voice, vision, image creation, and knowledge workflows.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
   appleWebApp: { capable: true, title: "NEXO AI", statusBarStyle: "black-translucent" },
   openGraph: {
     title: "NEXO AI",
-    description: "Your Intelligent Digital Companion — Personal AI Assistant with voice, vision, memory, and web search.",
+    description: "Beyond Intelligence. Beyond Limits. Unified AI Platform for intelligent conversation, voice, vision, image creation, and knowledge workflows.",
     type: "website"
   }
 };
 
 export const viewport: Viewport = {
-  themeColor: "#080d13",
+  themeColor: "#080b10",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover"

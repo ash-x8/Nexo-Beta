@@ -7,6 +7,7 @@ export interface DailyMetricPoint {
   requests: number;
   tts: number;
   voiceRequests: number;
+  imageRequests?: number;
   estimatedInputTokens: number;
   estimatedOutputTokens: number;
   rateLimitHits: number;
@@ -14,6 +15,7 @@ export interface DailyMetricPoint {
   fallbackCount: number;
   providers: Record<string, number>;
   models: Record<string, number>;
+  tasks?: Record<string, number>;
 }
 
 function lastNDaysKeys(days: number): string[] {
@@ -253,6 +255,7 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
     requests: number;
     tts: number;
     voiceRequests: number;
+    imageRequests: number;
     estimatedInputTokens: number;
     estimatedOutputTokens: number;
     rateLimitHits: number;
@@ -260,6 +263,7 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
     fallbackCount: number;
     byProvider: Record<string, number>;
     byModel: Record<string, number>;
+    tasks: Record<string, number>;
   };
 }> {
   const dayKeys = lastNDaysKeys(Math.min(Math.max(days, 1), 60));
@@ -270,13 +274,15 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
       requests: 0,
       tts: 0,
       voiceRequests: 0,
+      imageRequests: 0,
       estimatedInputTokens: 0,
       estimatedOutputTokens: 0,
       rateLimitHits: 0,
       failedRequests: 0,
       fallbackCount: 0,
       providers: {},
-      models: {}
+      models: {},
+      tasks: {}
     });
   }
 
@@ -284,13 +290,15 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
     requests: 0,
     tts: 0,
     voiceRequests: 0,
+    imageRequests: 0,
     estimatedInputTokens: 0,
     estimatedOutputTokens: 0,
     rateLimitHits: 0,
     failedRequests: 0,
     fallbackCount: 0,
     byProvider: {} as Record<string, number>,
-    byModel: {} as Record<string, number>
+    byModel: {} as Record<string, number>,
+    tasks: {} as Record<string, number>
   };
 
   if (!hasAdminCredentials()) {
@@ -307,6 +315,7 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
       pt.requests = typeof d.requests === "number" ? d.requests : 0;
       pt.tts = typeof d.tts === "number" ? d.tts : 0;
       pt.voiceRequests = typeof d.voiceRequests === "number" ? d.voiceRequests : 0;
+      pt.imageRequests = typeof d.imageRequests === "number" ? d.imageRequests : 0;
       pt.estimatedInputTokens = typeof d.estimatedInputTokens === "number" ? d.estimatedInputTokens : 0;
       pt.estimatedOutputTokens = typeof d.estimatedOutputTokens === "number" ? d.estimatedOutputTokens : 0;
       pt.rateLimitHits = typeof d.rateLimitHits === "number" ? d.rateLimitHits : 0;
@@ -314,10 +323,12 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
       pt.fallbackCount = typeof d.fallbackCount === "number" ? d.fallbackCount : 0;
       accumulateMap(pt.providers, d.providers);
       accumulateMap(pt.models, d.models);
+      if (pt.tasks) accumulateMap(pt.tasks, d.tasks);
 
       totals.requests += pt.requests;
       totals.tts += pt.tts;
       totals.voiceRequests += pt.voiceRequests;
+      totals.imageRequests += pt.imageRequests || 0;
       totals.estimatedInputTokens += pt.estimatedInputTokens;
       totals.estimatedOutputTokens += pt.estimatedOutputTokens;
       totals.rateLimitHits += pt.rateLimitHits;
@@ -325,6 +336,7 @@ export async function getSystemDailyMetrics(days = 14): Promise<{
       totals.fallbackCount += pt.fallbackCount;
       accumulateMap(totals.byProvider, d.providers);
       accumulateMap(totals.byModel, d.models);
+      accumulateMap(totals.tasks, d.tasks);
     }
   } catch {
     /* graceful empty state if metrics collection does not exist yet */

@@ -1,27 +1,50 @@
-import type { Lang, ReplyLang, ResponseStyle, Theme } from "./types";
+import type {
+  AccentPreset,
+  ChatDensity,
+  FontSizePref,
+  Lang,
+  ReplyLang,
+  ResponseStyle,
+  ResponseTone,
+  Theme,
+  VoiceInputLang
+} from "./types";
 
-export type { Theme, ResponseStyle };
+export type {
+  AccentPreset,
+  ChatDensity,
+  FontSizePref,
+  ResponseStyle,
+  ResponseTone,
+  Theme,
+  VoiceInputLang
+};
 
 export interface Prefs {
   ui: Lang;
   reply: ReplyLang;
   responseStyle: ResponseStyle;
-  voiceLang: "en-US" | "si-LK";
+  responseTone: ResponseTone;
+  voiceLang: VoiceInputLang;
+  voiceSpeed: number;
   speak: boolean;
+  jarvisContinuous: boolean;
+  enterToSend: boolean;
   memoryOn: boolean;
   avatarOn: boolean;
   theme: Theme;
-  /** "" = use the server's default model */
-  model: string;
-  /** optional display name for AI personalization */
+  accentColor: AccentPreset;
+  fontSize: FontSizePref;
+  chatDensity: ChatDensity;
+  /** Optional display name for personalization */
   nickname: string;
-  /** optional brief user instructions for AI personalization */
+  /** Optional brief user instructions for personalization */
   customInstructions: string;
-  /** browser voice (voiceURI); device specific, never synced */
+  /** Browser voice (voiceURI); device specific, never synced */
   voiceName: string;
-  /** desktop sidebar; device specific, never synced */
+  /** Desktop sidebar; device specific, never synced */
   sidebarCollapsed: boolean;
-  /** desktop assistant info panel; device specific, never synced */
+  /** Desktop assistant info panel; device specific, never synced */
   infoPanelOpen: boolean;
 }
 
@@ -29,12 +52,18 @@ export const DEFAULT_PREFS: Prefs = {
   ui: "en",
   reply: "auto",
   responseStyle: "balanced",
-  voiceLang: "en-US",
+  responseTone: "natural",
+  voiceLang: "auto",
+  voiceSpeed: 1,
   speak: false,
+  jarvisContinuous: false,
+  enterToSend: true,
   memoryOn: true,
   avatarOn: true,
   theme: "dark",
-  model: "",
+  accentColor: "teal",
+  fontSize: "md",
+  chatDensity: "comfortable",
   nickname: "",
   customInstructions: "",
   voiceName: "",
@@ -47,12 +76,18 @@ export const SYNCED_KEYS = [
   "ui",
   "reply",
   "responseStyle",
+  "responseTone",
   "voiceLang",
+  "voiceSpeed",
   "speak",
+  "jarvisContinuous",
+  "enterToSend",
   "memoryOn",
   "avatarOn",
   "theme",
-  "model",
+  "accentColor",
+  "fontSize",
+  "chatDensity",
   "nickname",
   "customInstructions"
 ] as const;
@@ -64,16 +99,51 @@ export function sanitizePrefs(raw: unknown): Partial<Prefs> {
   const out: Partial<Prefs> = {};
 
   if (r.ui === "en" || r.ui === "si") out.ui = r.ui;
-  if (r.reply === "auto" || r.reply === "en" || r.reply === "si") out.reply = r.reply;
+  if (r.reply === "auto" || r.reply === "en" || r.reply === "si" || r.reply === "ta" || r.reply === "hi") {
+    out.reply = r.reply;
+  }
   if (r.responseStyle === "balanced" || r.responseStyle === "concise" || r.responseStyle === "detailed") {
     out.responseStyle = r.responseStyle;
   }
-  if (r.voiceLang === "en-US" || r.voiceLang === "si-LK") out.voiceLang = r.voiceLang;
+  if (
+    r.responseTone === "natural" ||
+    r.responseTone === "professional" ||
+    r.responseTone === "friendly" ||
+    r.responseTone === "technical"
+  ) {
+    out.responseTone = r.responseTone;
+  }
+  if (
+    r.voiceLang === "auto" ||
+    r.voiceLang === "en-US" ||
+    r.voiceLang === "si-LK" ||
+    r.voiceLang === "ta-IN" ||
+    r.voiceLang === "hi-IN"
+  ) {
+    out.voiceLang = r.voiceLang;
+  }
+  if (typeof r.voiceSpeed === "number" && Number.isFinite(r.voiceSpeed) && r.voiceSpeed >= 0.75 && r.voiceSpeed <= 1.5) {
+    out.voiceSpeed = Math.round(r.voiceSpeed * 100) / 100;
+  }
   if (typeof r.speak === "boolean") out.speak = r.speak;
+  if (typeof r.jarvisContinuous === "boolean") out.jarvisContinuous = r.jarvisContinuous;
+  if (typeof r.enterToSend === "boolean") out.enterToSend = r.enterToSend;
   if (typeof r.memoryOn === "boolean") out.memoryOn = r.memoryOn;
   if (typeof r.avatarOn === "boolean") out.avatarOn = r.avatarOn;
   if (r.theme === "dark" || r.theme === "light" || r.theme === "system") out.theme = r.theme;
-  if (typeof r.model === "string" && r.model.length <= 100) out.model = r.model;
+  if (
+    r.accentColor === "teal" ||
+    r.accentColor === "sky" ||
+    r.accentColor === "emerald" ||
+    r.accentColor === "indigo" ||
+    r.accentColor === "amber"
+  ) {
+    out.accentColor = r.accentColor;
+  }
+  if (r.fontSize === "sm" || r.fontSize === "md" || r.fontSize === "lg") out.fontSize = r.fontSize;
+  if (r.chatDensity === "compact" || r.chatDensity === "comfortable" || r.chatDensity === "spacious") {
+    out.chatDensity = r.chatDensity;
+  }
   if (typeof r.nickname === "string") out.nickname = r.nickname.slice(0, 60);
   if (typeof r.customInstructions === "string") out.customInstructions = r.customInstructions.slice(0, 400);
   if (typeof r.voiceName === "string" && r.voiceName.length <= 200) out.voiceName = r.voiceName;
